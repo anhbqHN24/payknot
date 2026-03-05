@@ -1,0 +1,1 @@
+DROP INDEX "invoice_signature_idx";

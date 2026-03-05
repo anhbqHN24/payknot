@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #1e293b; /* Slate 800 */
+  --primary: #e11d48; /* Rose 600 */
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.blur-mask {
+  mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes panelRightIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes panelUpIn {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes overlayFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes panelRightOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(24px); }
+}
+
+@keyframes panelDownOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(24px); }
+}
+
+.animate-overlay-fade-in {
+  animation: overlayFadeIn 0.22s ease-out forwards;
+}
+
+.animate-panel-right-in {
+  animation: panelRightIn 0.28s ease-out forwards;
+}
+
+.animate-panel-up-in {
+  animation: panelUpIn 0.24s ease-out forwards;
+}
+
+.animate-overlay-fade-out {
+  animation: overlayFadeOut 0.2s ease-in forwards;
+}
+
+.animate-panel-right-out {
+  animation: panelRightOut 0.22s ease-in forwards;
+}
+
+.animate-panel-down-out {
+  animation: panelDownOut 0.2s ease-in forwards;
+}

@@ -1,0 +1,1770 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import ImgCrop from "antd-img-crop";
+import { Upload, message } from "antd";
+import type { UploadFile, UploadProps } from "antd/es/upload/interface";
+
+type AppUser = {
+  id: number;
+  name: string;
+  email: string;
+  provider: "password" | "google";
+};
+
+type CreateEventResponse = {
+  eventId: number;
+  slug: string;
+  checkoutUrl: string;
+  inviteCodes: string[];
+  eventImageUrl: string;
+  amountUsdc: string;
+  network: string;
+  merchantWallet: string;
+};
+
+type EventSummary = {
+  eventId: number;
+  slug: string;
+  title: string;
+  description: string;
+  eventImageUrl: string;
+  eventDate: string;
+  location: string;
+  organizerName: string;
+  merchantWallet: string;
+  amountUsdc: string;
+  network: string;
+  createdAt: string;
+};
+
+type EventCheckoutRow = {
+  id: number;
+  walletAddress: string;
+  reference: string;
+  signature: string;
+  status: string;
+  createdAt: string;
+  paidAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  inviteCode: string;
+  notes?: string;
+};
+
+type EventSortField = "title" | "organizerName" | "eventDate" | "amountUsdc";
+type DetailTab = "info" | "invites" | "deposits";
+
+const EVENT_PAGE_SIZE = 10;
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (args: {
+            client_id: string;
+            callback: (resp: { credential: string }) => void;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: Record<string, string | number>,
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export default function Home() {
+  const googleInitializedRef = useRef(false);
+  const detailCloseTimerRef = useRef<number | null>(null);
+  const pageHeaderRef = useRef<HTMLElement | null>(null);
+  const sessionsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [googleScriptReady, setGoogleScriptReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [location, setLocation] = useState("");
+  const [organizerName, setOrganizerName] = useState("");
+  const [merchantWallet, setMerchantWallet] = useState("");
+  const [amountUsdc, setAmountUsdc] = useState("10");
+  const [network, setNetwork] = useState("devnet");
+  const [eventImageUrl, setEventImageUrl] = useState("");
+  const [imageFileList, setImageFileList] = useState<UploadFile[]>([]);
+
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [selectedEventID, setSelectedEventID] = useState<number | null>(null);
+  const [detailRender, setDetailRender] = useState(false);
+  const [detailClosing, setDetailClosing] = useState(false);
+  const [detailMode, setDetailMode] = useState<"create" | "edit">("create");
+  const [detailTab, setDetailTab] = useState<DetailTab>("info");
+  const [showInvitesSection, setShowInvitesSection] = useState(true);
+  const [showDepositsSection, setShowDepositsSection] = useState(true);
+  const [inviteAccordionOpen, setInviteAccordionOpen] = useState(true);
+  const [depositAccordionOpen, setDepositAccordionOpen] = useState(true);
+  const [inviteSearchTerm, setInviteSearchTerm] = useState("");
+  const [invitePage, setInvitePage] = useState(1);
+  const [depositSearchTerm, setDepositSearchTerm] = useState("");
+  const [depositPage, setDepositPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(false);
+  const [desktopHeaderHeight, setDesktopHeaderHeight] = useState(0);
+  const [sessionsHeaderPinned, setSessionsHeaderPinned] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [eventDateFrom, setEventDateFrom] = useState("");
+  const [eventDateTo, setEventDateTo] = useState("");
+  const [sortField, setSortField] = useState<EventSortField>("eventDate");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [eventPage, setEventPage] = useState(1);
+  const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  const [inviteCodes, setInviteCodes] = useState<string[]>([]);
+  const [newCodeCount, setNewCodeCount] = useState("20");
+
+  const [checkouts, setCheckouts] = useState<EventCheckoutRow[]>([]);
+  const [loadingCheckouts, setLoadingCheckouts] = useState(false);
+  const [approvingID, setApprovingID] = useState<number | null>(null);
+  const [rejectingID, setRejectingID] = useState<number | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) {
+          setCurrentUser(null);
+          return;
+        }
+        const data = await res.json();
+        setCurrentUser(data.user as AppUser);
+      } catch {
+        setCurrentUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || currentUser) return;
+
+    const clientID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientID) return;
+
+    if (window.google) {
+      setGoogleScriptReady(true);
+      return;
+    }
+
+    const existing = document.getElementById(
+      "google-identity-script",
+    ) as HTMLScriptElement | null;
+    const onLoad = () => setGoogleScriptReady(true);
+
+    if (existing) {
+      existing.addEventListener("load", onLoad);
+      return () => existing.removeEventListener("load", onLoad);
+    }
+
+    const script = document.createElement("script");
+    script.id = "google-identity-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", onLoad);
+    document.body.appendChild(script);
+
+    return () => script.removeEventListener("load", onLoad);
+  }, [authLoading, currentUser]);
+
+  useEffect(() => {
+    if (authLoading || currentUser || !googleScriptReady) return;
+
+    const clientID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientID || !window.google) return;
+
+    if (!googleInitializedRef.current) {
+      window.google.accounts.id.initialize({
+        client_id: clientID,
+        callback: async (resp: { credential: string }) => {
+          try {
+            setAuthSubmitting(true);
+            const loginRes = await fetch("/api/auth/google", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ credential: resp.credential }),
+            });
+            if (!loginRes.ok) throw new Error(await loginRes.text());
+            const data = await loginRes.json();
+            setCurrentUser(data.user as AppUser);
+            setError("");
+          } catch (err) {
+            setError(
+              err instanceof Error ? err.message : "Google sign-in failed",
+            );
+          } finally {
+            setAuthSubmitting(false);
+          }
+        },
+      });
+      googleInitializedRef.current = true;
+    }
+
+    const render = () => {
+      const container = document.getElementById("google-login-button");
+      if (!container || !window.google) return;
+      container.innerHTML = "";
+      window.google.accounts.id.renderButton(container, {
+        theme: "outline",
+        size: "large",
+        shape: "rectangular",
+        width: 300,
+        text: "continue_with",
+      });
+    };
+
+    render();
+    const timer = window.setTimeout(render, 120);
+    return () => window.clearTimeout(timer);
+  }, [authLoading, currentUser, googleScriptReady, authMode]);
+
+  const selectedEvent = useMemo(
+    () => events.find((e) => e.eventId === selectedEventID) || null,
+    [events, selectedEventID],
+  );
+
+  const filteredAndSortedEvents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const from = eventDateFrom ? new Date(eventDateFrom).getTime() : null;
+    const to = eventDateTo ? new Date(eventDateTo).getTime() : null;
+
+    const filtered = events.filter((ev) => {
+      const haystack = [
+        ev.title,
+        ev.organizerName,
+        ev.description,
+        ev.merchantWallet,
+        ev.location,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (q && !haystack.includes(q)) return false;
+
+      if (from !== null || to !== null) {
+        if (!ev.eventDate) return false;
+        const t = new Date(ev.eventDate).getTime();
+        if (Number.isNaN(t)) return false;
+        if (from !== null && t < from) return false;
+        if (to !== null && t > to + 24 * 60 * 60 * 1000 - 1) return false;
+      }
+      return true;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      const direction = sortDirection === "asc" ? 1 : -1;
+      if (sortField === "title") {
+        return a.title.localeCompare(b.title) * direction;
+      }
+      if (sortField === "organizerName") {
+        return (
+          (a.organizerName || "").localeCompare(b.organizerName || "") *
+          direction
+        );
+      }
+      if (sortField === "eventDate") {
+        const aT = a.eventDate ? new Date(a.eventDate).getTime() : 0;
+        const bT = b.eventDate ? new Date(b.eventDate).getTime() : 0;
+        return (aT - bT) * direction;
+      }
+      const aAmount = Number.parseFloat(a.amountUsdc || "0");
+      const bAmount = Number.parseFloat(b.amountUsdc || "0");
+      return (aAmount - bAmount) * direction;
+    });
+
+    return sorted;
+  }, [
+    events,
+    searchQuery,
+    eventDateFrom,
+    eventDateTo,
+    sortField,
+    sortDirection,
+  ]);
+
+  const eventTotalPages = useMemo(
+    () =>
+      Math.max(1, Math.ceil(filteredAndSortedEvents.length / EVENT_PAGE_SIZE)),
+    [filteredAndSortedEvents.length],
+  );
+
+  const paginatedEvents = useMemo(() => {
+    const start = (eventPage - 1) * EVENT_PAGE_SIZE;
+    return filteredAndSortedEvents.slice(start, start + EVENT_PAGE_SIZE);
+  }, [filteredAndSortedEvents, eventPage]);
+
+  const fullCheckoutLink = useMemo(() => {
+    if (!selectedEvent) return "";
+    if (typeof window === "undefined") return `/checkout/${selectedEvent.slug}`;
+    return `${window.location.origin}/checkout/${selectedEvent.slug}`;
+  }, [selectedEvent]);
+
+  const filteredInvites = useMemo(() => {
+    const q = inviteSearchTerm.trim().toLowerCase();
+    return inviteCodes.filter((code) => code.toLowerCase().includes(q));
+  }, [inviteCodes, inviteSearchTerm]);
+
+  const inviteTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredInvites.length / 10)),
+    [filteredInvites.length],
+  );
+  const pagedInvites = useMemo(() => {
+    const start = (invitePage - 1) * 10;
+    return filteredInvites.slice(start, start + 10);
+  }, [filteredInvites, invitePage]);
+
+  const filteredDeposits = useMemo(() => {
+    const q = depositSearchTerm.trim().toLowerCase();
+    return checkouts.filter((row) => {
+      const haystack = [
+        row.inviteCode,
+        row.walletAddress,
+        row.reference,
+        row.signature,
+        row.status,
+        row.notes || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return q ? haystack.includes(q) : true;
+    });
+  }, [checkouts, depositSearchTerm]);
+
+  const depositTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredDeposits.length / 10)),
+    [filteredDeposits.length],
+  );
+  const pagedDeposits = useMemo(() => {
+    const start = (depositPage - 1) * 10;
+    return filteredDeposits.slice(start, start + 10);
+  }, [filteredDeposits, depositPage]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    void loadEvents();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    fillFormFromEvent(selectedEvent);
+    void loadInviteCodes(selectedEvent.eventId);
+    void refreshCheckouts(selectedEvent.eventId);
+  }, [selectedEventID]);
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 768);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    const measure = () => {
+      const h = pageHeaderRef.current?.offsetHeight ?? 0;
+      setDesktopHeaderHeight(h);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => {
+      if (isMobile) {
+        setSessionsHeaderPinned(false);
+        return;
+      }
+      if (!sessionsHeaderRef.current) return;
+      const rect = sessionsHeaderRef.current.getBoundingClientRect();
+      setSessionsHeaderPinned(rect.top <= desktopHeaderHeight + 8);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [isMobile, desktopHeaderHeight]);
+
+  useEffect(() => {
+    setInvitePage(1);
+  }, [inviteSearchTerm, selectedEventID, inviteCodes.length]);
+
+  useEffect(() => {
+    if (invitePage > inviteTotalPages) setInvitePage(inviteTotalPages);
+  }, [invitePage, inviteTotalPages]);
+
+  useEffect(() => {
+    setDepositPage(1);
+  }, [depositSearchTerm, selectedEventID, checkouts.length]);
+
+  useEffect(() => {
+    if (depositPage > depositTotalPages) setDepositPage(depositTotalPages);
+  }, [depositPage, depositTotalPages]);
+
+  useEffect(() => {
+    setEventPage(1);
+  }, [searchQuery, eventDateFrom, eventDateTo, sortField, sortDirection]);
+
+  useEffect(() => {
+    if (eventPage > eventTotalPages) {
+      setEventPage(eventTotalPages);
+    }
+  }, [eventPage, eventTotalPages]);
+
+  const fillFormFromEvent = (ev: EventSummary) => {
+    setTitle(ev.title);
+    setDescription(ev.description || "");
+    setEventDate(
+      ev.eventDate ? new Date(ev.eventDate).toISOString().slice(0, 16) : "",
+    );
+    setLocation(ev.location || "");
+    setOrganizerName(ev.organizerName || "");
+    setMerchantWallet(ev.merchantWallet || "");
+    setAmountUsdc(ev.amountUsdc || "10");
+    setNetwork(ev.network || "devnet");
+    setEventImageUrl(ev.eventImageUrl || "");
+    setImageFileList([]);
+  };
+
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setEventDate("");
+    setLocation("");
+    setOrganizerName("");
+    setMerchantWallet("");
+    setAmountUsdc("10");
+    setNetwork("devnet");
+    setEventImageUrl("");
+    setImageFileList([]);
+  };
+
+  const loadEvents = async () => {
+    setLoadingEvents(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/events`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const fetched = (data.events ?? []) as EventSummary[];
+      setEvents(fetched);
+      setSelectedEventID((prev) =>
+        fetched.some((e) => e.eventId === prev) ? prev : null,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load events");
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  const createEvent = async () => {
+    if (!currentUser) {
+      setError("Please login first.");
+      return;
+    }
+
+    setError("");
+    setCreating(true);
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          eventImageUrl,
+          eventDate: eventDate ? new Date(eventDate).toISOString() : "",
+          location,
+          organizerName,
+          merchantWallet,
+          amountUsdc: Number(amountUsdc),
+          network,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as CreateEventResponse;
+      await loadEvents();
+      setSelectedEventID(data.eventId);
+      setDetailMode("edit");
+      setInviteCodes(data.inviteCodes ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create event");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const updateEvent = async () => {
+    if (!currentUser || !selectedEvent) return;
+    setUpdating(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/events/${selectedEvent.eventId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          eventImageUrl,
+          eventDate: eventDate ? new Date(eventDate).toISOString() : "",
+          location,
+          organizerName,
+          merchantWallet,
+          amountUsdc: Number(amountUsdc),
+          network,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update event");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const saveEventChanges = async () => {
+    if (detailMode === "create") {
+      await createEvent();
+      return;
+    }
+    await updateEvent();
+  };
+
+  const deleteEvent = async () => {
+    if (!currentUser || !selectedEvent) return;
+    const ok = window.confirm(`Delete event \"${selectedEvent.title}\"?`);
+    if (!ok) return;
+
+    setDeleting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/events/${selectedEvent.eventId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadEvents();
+      setInviteCodes([]);
+      setCheckouts([]);
+      if (selectedEventID === selectedEvent.eventId) {
+        setSelectedEventID(null);
+        resetForm();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete event");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const loadInviteCodes = async (eventID: number) => {
+    try {
+      const res = await fetch(`/api/events/${eventID}/invite-codes`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setInviteCodes((data.codes ?? []) as string[]);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load invite codes",
+      );
+    }
+  };
+
+  const generateCodes = async () => {
+    if (!selectedEvent) return;
+    setError("");
+    try {
+      const res = await fetch(
+        `/api/events/${selectedEvent.eventId}/invite-codes`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ count: Number(newCodeCount) }),
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const incoming: string[] = data.codes ?? [];
+      setInviteCodes((prev) => [...prev, ...incoming]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate codes");
+    }
+  };
+
+  const refreshCheckouts = async (eventID?: number) => {
+    const id = eventID ?? selectedEvent?.eventId;
+    if (!id) return;
+    setLoadingCheckouts(true);
+    try {
+      const res = await fetch(`/api/events/${id}/checkouts`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setCheckouts(data.checkouts ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load checkouts");
+    } finally {
+      setLoadingCheckouts(false);
+    }
+  };
+
+  const approveCheckout = async (checkoutID: number) => {
+    setApprovingID(checkoutID);
+    setError("");
+    try {
+      const res = await fetch(`/api/checkouts/${checkoutID}/approve`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approvedBy: organizerName || currentUser?.name || "organizer",
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refreshCheckouts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Approval failed");
+    } finally {
+      setApprovingID(null);
+    }
+  };
+
+  const rejectCheckout = async (checkoutID: number) => {
+    const reason = window.prompt("Reason for rejection:", "");
+    if (!reason || !reason.trim()) return;
+
+    setRejectingID(checkoutID);
+    setError("");
+    try {
+      const res = await fetch(`/api/checkouts/${checkoutID}/reject`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rejectedBy: organizerName || currentUser?.name || "organizer",
+          reason: reason.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refreshCheckouts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reject failed");
+    } finally {
+      setRejectingID(null);
+    }
+  };
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      void message.success("Copied");
+    } catch {
+      setError("Failed to copy text");
+    }
+  };
+
+  const uploadProps: UploadProps = {
+    accept: "image/jpeg,image/png,image/webp",
+    listType: "picture-card",
+    fileList: imageFileList,
+    maxCount: 1,
+    beforeUpload: (file) => {
+      const isValidType = ["image/jpeg", "image/png", "image/webp"].includes(
+        file.type,
+      );
+      if (!isValidType) {
+        void message.error("Image format must be JPG, PNG, or WEBP");
+        return Upload.LIST_IGNORE;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        void message.error("Image must be <= 2MB");
+        return Upload.LIST_IGNORE;
+      }
+      return false;
+    },
+    onChange: async ({ fileList: list }) => {
+      setImageFileList(list.slice(-1));
+      const target = list[0]?.originFileObj as File | undefined;
+      if (!target) {
+        setEventImageUrl("");
+        return;
+      }
+      const b64 = await toBase64(target);
+      setEventImageUrl(b64);
+    },
+    onRemove: () => {
+      setImageFileList([]);
+      setEventImageUrl("");
+    },
+    customRequest: ({ onSuccess }) => {
+      onSuccess?.("ok");
+    },
+  };
+
+  const onAuthSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword;
+    const name = authName.trim();
+
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+    if (authMode === "register" && !name) {
+      setError("Name is required for register");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      const endpoint =
+        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+      const payload =
+        authMode === "register"
+          ? { name, email, password }
+          : { email, password };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setCurrentUser(data.user as AppUser);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore network errors on logout; clear local state anyway.
+    }
+    setCurrentUser(null);
+    setEvents([]);
+    setSelectedEventID(null);
+    setInviteCodes([]);
+    setCheckouts([]);
+    resetForm();
+  };
+
+  const openCreateDetail = () => {
+    if (detailCloseTimerRef.current) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+    setDetailMode("create");
+    setSelectedEventID(null);
+    resetForm();
+    setInviteCodes([]);
+    setCheckouts([]);
+    setDetailTab("info");
+    setDetailRender(true);
+    setDetailClosing(false);
+  };
+
+  const openEditDetail = (eventID: number) => {
+    if (detailCloseTimerRef.current) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+    setDetailMode("edit");
+    setSelectedEventID(eventID);
+    setDetailTab("info");
+    setDetailRender(true);
+    setDetailClosing(false);
+  };
+
+  const closeDetail = () => {
+    setDetailClosing(true);
+    if (detailCloseTimerRef.current) {
+      window.clearTimeout(detailCloseTimerRef.current);
+    }
+    detailCloseTimerRef.current = window.setTimeout(() => {
+      setDetailRender(false);
+      setDetailClosing(false);
+      detailCloseTimerRef.current = null;
+    }, 260);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (detailCloseTimerRef.current) {
+        window.clearTimeout(detailCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const renderGeneralInfoForm = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">Event title</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+      </label>
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">Organizer name</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full"
+          value={organizerName}
+          onChange={(e) => setOrganizerName(e.target.value)}
+        />
+      </label>
+
+      <label className="text-sm md:col-span-2">
+        <span className="block mb-1 font-medium">Brief event description</span>
+        <textarea
+          className="border rounded-lg px-3 py-2 w-full min-h-24 resize-y"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </label>
+
+      <div className="text-sm md:col-span-2">
+        <span className="block mb-1 font-medium">
+          Event image (square crop, JPG/PNG/WEBP, max 2MB)
+        </span>
+        <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
+          <Upload {...uploadProps}>
+            {imageFileList.length === 0 && <div>Upload</div>}
+          </Upload>
+        </ImgCrop>
+        {eventImageUrl && (
+          <img
+            src={eventImageUrl}
+            alt="Event preview"
+            className="mt-2 h-28 w-28 rounded-lg border object-cover"
+          />
+        )}
+      </div>
+
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">Event date & time</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full"
+          type="datetime-local"
+          value={eventDate}
+          onChange={(e) => setEventDate(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">Location link</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+      </label>
+      <label className="text-sm md:col-span-2">
+        <span className="block mb-1 font-medium">Merchant wallet address</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full font-mono text-xs"
+          value={merchantWallet}
+          onChange={(e) => setMerchantWallet(e.target.value)}
+          required
+        />
+      </label>
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">USDC amount</span>
+        <input
+          className="border rounded-lg px-3 py-2 w-full"
+          type="number"
+          min="1"
+          step="1"
+          value={amountUsdc}
+          onChange={(e) => setAmountUsdc(e.target.value)}
+          required
+        />
+      </label>
+      <label className="text-sm">
+        <span className="block mb-1 font-medium">Network</span>
+        <select
+          className="border rounded-lg px-3 py-2 w-full"
+          value={network}
+          onChange={(e) => setNetwork(e.target.value)}
+        >
+          <option value="devnet">Devnet</option>
+          <option value="mainnet">Mainnet</option>
+        </select>
+      </label>
+      {detailMode === "edit" && selectedEvent && (
+        <div className="md:col-span-2 rounded-lg border bg-slate-50 p-3">
+          <p className="text-xs text-slate-500 mb-1">Checkout link</p>
+          <div className="font-mono text-xs break-all">{fullCheckoutLink}</div>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => copyText(fullCheckoutLink)}
+              className="rounded-lg border px-2.5 py-1 text-xs"
+            >
+              Copy Link
+            </button>
+            <a
+              href={`/checkout/${selectedEvent.slug}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border px-2.5 py-1 text-xs"
+            >
+              Open Checkout
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderInviteList = () => (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          <span className="mb-1 block">Search Invite</span>
+          <input
+            className="border rounded-lg px-3 py-2"
+            placeholder="Search code..."
+            value={inviteSearchTerm}
+            onChange={(e) => setInviteSearchTerm(e.target.value)}
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block">Generate Count</span>
+          <input
+            className="border rounded-lg px-3 py-2 w-28"
+            type="number"
+            value={newCodeCount}
+            min="1"
+            max="500"
+            onChange={(e) => setNewCodeCount(e.target.value)}
+          />
+        </label>
+        <button
+          onClick={generateCodes}
+          disabled={detailMode === "create"}
+          className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-50"
+        >
+          Generate
+        </button>
+      </div>
+
+      {detailMode === "create" ? (
+        <p className="text-xs text-slate-500">
+          Save event first to manage invite codes.
+        </p>
+      ) : (
+        <>
+          <div className="text-xs text-slate-500">
+            Showing{" "}
+            {filteredInvites.length === 0 ? 0 : (invitePage - 1) * 10 + 1}-
+            {Math.min(invitePage * 10, filteredInvites.length)} of{" "}
+            {filteredInvites.length} invite codes
+          </div>
+          <div className="rounded-lg border bg-slate-50 p-2 max-h-72 overflow-auto">
+            {pagedInvites.length === 0 ? (
+              <p className="text-sm text-slate-500">No invite codes found.</p>
+            ) : (
+              <ul className="space-y-1 font-mono text-xs">
+                {pagedInvites.map((code, idx) => (
+                  <li
+                    key={`${code}-${idx}`}
+                    className="flex items-center justify-between border rounded-lg bg-white border-slate-200 px-2 py-1.5"
+                  >
+                    <span>{code}</span>
+                    <button
+                      onClick={() => copyText(code)}
+                      className="rounded border px-2 py-0.5 text-[11px]"
+                    >
+                      Copy
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div
+            className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+          >
+            <button
+              disabled={invitePage <= 1}
+              onClick={() => setInvitePage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span className="text-xs text-slate-600">
+              Page {invitePage} / {inviteTotalPages}
+            </span>
+            <button
+              disabled={invitePage >= inviteTotalPages}
+              onClick={() =>
+                setInvitePage((p) => Math.min(inviteTotalPages, p + 1))
+              }
+              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const renderDepositList = () => (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          <span className="mb-1 block">Search Deposit</span>
+          <input
+            className="border rounded-lg px-3 py-2"
+            placeholder="Invite, wallet, reference, status..."
+            value={depositSearchTerm}
+            onChange={(e) => setDepositSearchTerm(e.target.value)}
+          />
+        </label>
+        <button
+          onClick={() => refreshCheckouts()}
+          disabled={detailMode === "create"}
+          className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+        >
+          Refresh
+        </button>
+      </div>
+      {detailMode === "create" ? (
+        <p className="text-xs text-slate-500">
+          Save event first to view participant deposits.
+        </p>
+      ) : loadingCheckouts ? (
+        <p className="text-sm text-slate-500">Loading deposits...</p>
+      ) : pagedDeposits.length === 0 ? (
+        <p className="text-sm text-slate-500">No deposits found.</p>
+      ) : (
+        <>
+          <div className="text-xs text-slate-500">
+            Showing{" "}
+            {filteredDeposits.length === 0 ? 0 : (depositPage - 1) * 10 + 1}-
+            {Math.min(depositPage * 10, filteredDeposits.length)} of{" "}
+            {filteredDeposits.length} deposits
+          </div>
+          <div className="rounded-lg border overflow-auto max-h-80">
+            <table className="min-w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr className="text-left">
+                  <th className="px-2 py-2">Invite</th>
+                  <th className="px-2 py-2">Wallet</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedDeposits.map((row) => (
+                  <tr key={row.id} className="border-t align-top">
+                    <td className="px-2 py-2 font-mono">{row.inviteCode}</td>
+                    <td className="px-2 py-2 font-mono max-w-[140px] break-all">
+                      {row.walletAddress}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div>{row.status}</div>
+                      {row.status === "rejected" && row.notes && (
+                        <div className="text-red-600">{row.notes}</div>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      {(row.status === "paid" || row.status === "approved") && (
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => approveCheckout(row.id)}
+                            disabled={
+                              approvingID === row.id ||
+                              row.status === "approved"
+                            }
+                            className="rounded bg-emerald-600 text-white px-2 py-1 disabled:opacity-50"
+                          >
+                            {approvingID === row.id ? "..." : "Approve"}
+                          </button>
+                          <button
+                            onClick={() => rejectCheckout(row.id)}
+                            disabled={rejectingID === row.id}
+                            className="rounded bg-red-600 text-white px-2 py-1 disabled:opacity-50"
+                          >
+                            {rejectingID === row.id ? "..." : "Reject"}
+                          </button>
+                        </div>
+                      )}
+                      {row.signature && (
+                        <a
+                          href={
+                            selectedEvent?.network === "mainnet"
+                              ? `https://solscan.io/tx/${row.signature}`
+                              : `https://solscan.io/tx/${row.signature}?cluster=devnet`
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline text-blue-600 block mt-1"
+                        >
+                          Tx
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div
+            className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+          >
+            <button
+              disabled={depositPage <= 1}
+              onClick={() => setDepositPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span className="text-xs text-slate-600">
+              Page {depositPage} / {depositTotalPages}
+            </span>
+            <button
+              disabled={depositPage >= depositTotalPages}
+              onClick={() =>
+                setDepositPage((p) => Math.min(depositTotalPages, p + 1))
+              }
+              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  if (authLoading) {
+    return (
+      <main className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="mx-auto max-w-lg px-4 py-14">
+          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
+            <p className="text-sm text-slate-600">Checking session...</p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <main className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="mx-auto max-w-lg px-4 py-14">
+          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-4">
+            <h1 className="text-2xl font-bold">Login / Register</h1>
+            <p className="text-sm text-slate-600">
+              Login required to access event checkout management.
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAuthMode("login")}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-slate-900 text-white" : "bg-white"}`}
+              >
+                Login
+              </button>
+              <button
+                onClick={() => setAuthMode("register")}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-slate-900 text-white" : "bg-white"}`}
+              >
+                Register
+              </button>
+            </div>
+
+            <form onSubmit={onAuthSubmit} className="space-y-3">
+              {authMode === "register" && (
+                <label className="text-sm block">
+                  <span className="block mb-1">Name</span>
+                  <input
+                    className="border rounded-lg px-3 py-2 w-full"
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                  />
+                </label>
+              )}
+              <label className="text-sm block">
+                <span className="block mb-1">Email</span>
+                <input
+                  className="border rounded-lg px-3 py-2 w-full"
+                  type="email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                />
+              </label>
+              <label className="text-sm block">
+                <span className="block mb-1">Password</span>
+                <input
+                  className="border rounded-lg px-3 py-2 w-full"
+                  type="password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                />
+              </label>
+              <button
+                disabled={authSubmitting}
+                className="w-full rounded-lg bg-slate-900 text-white py-2.5 font-semibold disabled:opacity-60"
+              >
+                {authSubmitting
+                  ? "Please wait..."
+                  : authMode === "register"
+                    ? "Create Account"
+                    : "Login"}
+              </button>
+            </form>
+
+            <div className="pt-2 border-t">
+              <p className="text-sm mb-2">Or continue with Google</p>
+              {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+                <div id="google-login-button" />
+              ) : (
+                <p className="text-xs text-amber-700">
+                  Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable Google OAuth.
+                </p>
+              )}
+            </div>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto max-w-6xl px-3 md:px-4 py-4 md:py-10 space-y-4 md:space-y-6">
+        <section
+          ref={pageHeaderRef}
+          className={`sticky top-0 z-30 rounded-2xl bg-white/95 backdrop-blur border border-slate-200 shadow-sm p-3 md:p-6 transition-transform duration-300 ${!isMobile && sessionsHeaderPinned ? "-translate-y-[105%]" : "translate-y-0"}`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl md:text-3xl font-bold tracking-tight">
+                Payknot
+              </h1>
+              <p className="mt-1 text-slate-600 text-xs md:text-sm">
+                Signed in as {currentUser.name} ({currentUser.email})
+              </p>
+            </div>
+            <button
+              onClick={logout}
+              className="rounded-lg border px-3 py-1.5 md:py-2 text-xs md:text-sm"
+            >
+              Logout
+            </button>
+          </div>
+
+          <div className="mt-3 md:hidden space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  if (currentUser) void loadEvents();
+                }}
+                className="rounded-lg border px-2 py-1.5 text-xs"
+                disabled={loadingEvents}
+              >
+                {loadingEvents ? "Loading..." : "Refresh"}
+              </button>
+              <button
+                onClick={openCreateDetail}
+                className="rounded-lg border px-2 py-1.5 text-xs"
+              >
+                Create Event
+              </button>
+            </div>
+            <input
+              className="border rounded-lg px-2 py-1.5 w-full text-xs"
+              placeholder="Search title, organizer, description, wallet, location"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className="border rounded-lg px-2 py-1.5 w-full text-xs"
+                type="date"
+                value={eventDateFrom}
+                onChange={(e) => setEventDateFrom(e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-2 py-1.5 w-full text-xs"
+                type="date"
+                value={eventDateTo}
+                onChange={(e) => setEventDateTo(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <select
+                className="border rounded-lg px-2 py-1.5 w-full text-xs"
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value as EventSortField)}
+              >
+                <option value="title">Name</option>
+                <option value="organizerName">Organizer</option>
+                <option value="eventDate">Date</option>
+                <option value="amountUsdc">USDC</option>
+              </select>
+              <select
+                className="border rounded-lg px-2 py-1.5 w-full text-xs"
+                value={sortDirection}
+                onChange={(e) =>
+                  setSortDirection(e.target.value as "asc" | "desc")
+                }
+              >
+                <option value="desc">Desc</option>
+                <option value="asc">Asc</option>
+              </select>
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setEventDateFrom("");
+                  setEventDateTo("");
+                  setSortField("eventDate");
+                  setSortDirection("desc");
+                }}
+                className="rounded-lg border px-2 py-1.5 text-xs"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-3 md:p-6 space-y-3">
+          <div
+            ref={sessionsHeaderRef}
+            className="hidden md:block sticky z-20 bg-white/95 backdrop-blur rounded-lg border border-slate-200 p-3 flex-col gap-3  transition-all duration-300"
+            style={{ top: sessionsHeaderPinned ? 0 : desktopHeaderHeight + 8 }}
+          >
+            <div className="md:flex md:flex-row md:items-center md:justify-between mb-5">
+              <h2 className="text-xl font-semibold">Your Event Sessions</h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    if (currentUser) void loadEvents();
+                  }}
+                  className="rounded-lg border px-3 py-1.5 text-sm"
+                  disabled={loadingEvents}
+                >
+                  {loadingEvents ? "Loading..." : "Refresh"}
+                </button>
+                <button
+                  onClick={openCreateDetail}
+                  className="rounded-lg border px-3 py-1.5 text-sm"
+                >
+                  Create Event
+                </button>
+              </div>
+            </div>
+            <div className="hidden md:grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
+              <label className="text-sm">
+                <span className="mb-1 block">Search</span>
+                <input
+                  className="border rounded-lg px-3 py-2 w-full"
+                  placeholder="Title, organizer, description, wallet, location"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block">Event date from</span>
+                <input
+                  className="border rounded-lg px-3 py-2 w-full"
+                  type="date"
+                  value={eventDateFrom}
+                  onChange={(e) => setEventDateFrom(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block">Event date to</span>
+                <input
+                  className="border rounded-lg px-3 py-2 w-full"
+                  type="date"
+                  value={eventDateTo}
+                  onChange={(e) => setEventDateTo(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block">Sort by</span>
+                <select
+                  className="border rounded-lg px-3 py-2 w-full"
+                  value={sortField}
+                  onChange={(e) =>
+                    setSortField(e.target.value as EventSortField)
+                  }
+                >
+                  <option value="title">Event name</option>
+                  <option value="organizerName">Organizer name</option>
+                  <option value="eventDate">Event date & time</option>
+                  <option value="amountUsdc">USDC amount</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block">Order</span>
+                <select
+                  className="border rounded-lg px-3 py-2 w-full"
+                  value={sortDirection}
+                  onChange={(e) =>
+                    setSortDirection(e.target.value as "asc" | "desc")
+                  }
+                >
+                  <option value="desc">Descending</option>
+                  <option value="asc">Ascending</option>
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setEventDateFrom("");
+                    setEventDateTo("");
+                    setSortField("eventDate");
+                    setSortDirection("desc");
+                  }}
+                  className="rounded-lg border px-3 py-2 text-sm w-full"
+                >
+                  Reset Filters
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {events.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No event created yet for this account.
+            </p>
+          ) : filteredAndSortedEvents.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No event matches your current search/filter.
+            </p>
+          ) : (
+            <>
+              <div className="text-xs text-slate-500">
+                Showing {(eventPage - 1) * EVENT_PAGE_SIZE + 1}-
+                {Math.min(
+                  eventPage * EVENT_PAGE_SIZE,
+                  filteredAndSortedEvents.length,
+                )}{" "}
+                of {filteredAndSortedEvents.length} events
+              </div>
+              <div className="grid grid-cols-1 gap-2 md:gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {paginatedEvents.map((ev) => (
+                  <button
+                    key={ev.eventId}
+                    onClick={() => openEditDetail(ev.eventId)}
+                    className={`text-left border rounded-xl p-2 md:p-3 transition ${selectedEventID === ev.eventId ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
+                  >
+                    <div className="flex gap-2 md:block">
+                      {ev.eventImageUrl && (
+                        <img
+                          src={ev.eventImageUrl}
+                          alt={ev.title}
+                          className="h-12 w-12 rounded-md object-cover flex-shrink-0 md:w-full md:h-auto md:aspect-square md:mb-2"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold line-clamp-1 text-xs md:text-base">
+                          {ev.title}
+                        </p>
+                        <div className="mt-1 space-y-0.5 text-[11px] md:text-xs text-slate-600">
+                          <p className="line-clamp-1">
+                            Org: {ev.organizerName || "-"}
+                          </p>
+                          <p className="line-clamp-1">
+                            {ev.eventDate
+                              ? new Date(ev.eventDate).toLocaleDateString()
+                              : "-"}
+                          </p>
+                          <p className="line-clamp-1">{ev.amountUsdc} USDC</p>
+                          <p className="hidden md:block line-clamp-1 font-mono text-[11px]">
+                            {ev.merchantWallet}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 -mx-3 md:mx-0 md:border-0 md:bg-transparent md:static px-3 md:px-0 py-2 flex flex-wrap items-center gap-2 pt-2">
+                <button
+                  disabled={eventPage <= 1}
+                  onClick={() => setEventPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border px-2.5 py-1 text-xs md:text-sm disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <span className="text-xs md:text-sm text-slate-600">
+                  Page {eventPage} / {eventTotalPages}
+                </span>
+                <button
+                  disabled={eventPage >= eventTotalPages}
+                  onClick={() =>
+                    setEventPage((p) => Math.min(eventTotalPages, p + 1))
+                  }
+                  className="rounded-lg border px-2.5 py-1 text-xs md:text-sm disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+        {detailRender && (
+          <div className="fixed inset-0 z-50">
+            <div
+              className={`absolute inset-0 bg-slate-900/30 ${detailClosing ? "animate-overlay-fade-out" : "animate-overlay-fade-in"}`}
+              onClick={closeDetail}
+            />
+
+            {isMobile ? (
+              <div
+                className={`absolute inset-0 bg-white flex flex-col ${detailClosing ? "animate-panel-down-out" : "animate-panel-up-in"}`}
+              >
+                <div className="border-b border-slate-200 px-4 py-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      {detailMode === "create" ? "Create Event" : "Edit Event"}
+                    </p>
+                    <h3 className="text-lg font-semibold">
+                      {title || selectedEvent?.title || "New Event"}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={closeDetail}
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="px-4 py-2 border-b border-slate-200 flex gap-2">
+                  {(["info", "invites", "deposits"] as DetailTab[]).map(
+                    (tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setDetailTab(tab)}
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300"}`}
+                      >
+                        {tab === "info"
+                          ? "General Info"
+                          : tab === "invites"
+                            ? "Invites"
+                            : "Deposits"}
+                      </button>
+                    ),
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 py-4 pb-28 space-y-4">
+                  {detailTab === "info" && renderGeneralInfoForm()}
+
+                  {detailTab === "invites" && (
+                    <section className="rounded-lg border border-slate-200">
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm font-medium border-b bg-slate-50"
+                        onClick={() => setInviteAccordionOpen((v) => !v)}
+                      >
+                        Invite Codes {inviteAccordionOpen ? "▾" : "▸"}
+                      </button>
+                      {inviteAccordionOpen && (
+                        <div className="p-3">{renderInviteList()}</div>
+                      )}
+                    </section>
+                  )}
+
+                  {detailTab === "deposits" && (
+                    <section className="rounded-lg border border-slate-200">
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm font-medium border-b bg-slate-50"
+                        onClick={() => setDepositAccordionOpen((v) => !v)}
+                      >
+                        Participant Deposits {depositAccordionOpen ? "▾" : "▸"}
+                      </button>
+                      {depositAccordionOpen && (
+                        <div className="p-3">{renderDepositList()}</div>
+                      )}
+                    </section>
+                  )}
+                </div>
+
+                <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 py-3">
+                  <div className="flex gap-2">
+                    {detailMode === "edit" && (
+                      <button
+                        onClick={deleteEvent}
+                        disabled={deleting || !selectedEvent}
+                        className="rounded-lg bg-red-600 text-white px-3 py-2 text-sm disabled:opacity-60"
+                      >
+                        {deleting ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
+                    <button
+                      onClick={saveEventChanges}
+                      disabled={creating || updating}
+                      className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
+                    >
+                      {detailMode === "create"
+                        ? creating
+                          ? "Creating..."
+                          : "Save Event"
+                        : updating
+                          ? "Saving..."
+                          : "Save Changes"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`absolute inset-y-0 right-0 w-[600px] bg-white border-l border-slate-200 shadow-xl flex flex-col ${detailClosing ? "animate-panel-right-out" : "animate-panel-right-in"}`}
+              >
+                <div className="border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      {detailMode === "create"
+                        ? "Create Event"
+                        : "Event Detail"}
+                    </p>
+                    <h3 className="text-lg font-semibold">
+                      {title || selectedEvent?.title || "New Event"}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={closeDetail}
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5 pb-28 space-y-6">
+                  <section className="space-y-3">
+                    <h4 className="text-sm font-semibold text-slate-700">
+                      General Info
+                    </h4>
+                    {renderGeneralInfoForm()}
+                  </section>
+
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-slate-700">
+                        Invite Codes
+                      </h4>
+                      <button
+                        onClick={() => setShowInvitesSection((v) => !v)}
+                        className="text-xs rounded-lg border px-2 py-1"
+                      >
+                        {showInvitesSection ? "Hide" : "View All"}
+                      </button>
+                    </div>
+                    {showInvitesSection && renderInviteList()}
+                  </section>
+
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-slate-700">
+                        Participant Deposits
+                      </h4>
+                      <button
+                        onClick={() => setShowDepositsSection((v) => !v)}
+                        className="text-xs rounded-lg border px-2 py-1"
+                      >
+                        {showDepositsSection ? "Hide" : "View All"}
+                      </button>
+                    </div>
+                    {showDepositsSection && renderDepositList()}
+                  </section>
+                </div>
+
+                <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-5 py-3">
+                  <div className="flex gap-2">
+                    {detailMode === "edit" && (
+                      <button
+                        onClick={deleteEvent}
+                        disabled={deleting || !selectedEvent}
+                        className="rounded-lg bg-red-600 text-white px-3 py-2 text-sm disabled:opacity-60"
+                      >
+                        {deleting ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
+                    <button
+                      onClick={saveEventChanges}
+                      disabled={creating || updating}
+                      className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
+                    >
+                      {detailMode === "create"
+                        ? creating
+                          ? "Creating..."
+                          : "Save Event"
+                        : updating
+                          ? "Saving..."
+                          : "Save Changes"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+      </div>
+    </main>
+  );
+}
