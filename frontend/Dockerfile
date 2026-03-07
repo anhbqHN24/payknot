@@ -1,11 +1,13 @@
-FROM node:20-alpine AS deps
+FROM node:20-alpine AS base
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+
+FROM base AS deps
 RUN apk add --no-cache python3 make g++ eudev-dev pkgconf
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
-FROM node:20-alpine AS builder
-WORKDIR /app
+FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -26,12 +28,14 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
+RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
+USER nextjs
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["node", "server.js"]
