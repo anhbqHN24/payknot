@@ -1,5 +1,6 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++ eudev-dev pkgconf
 COPY package*.json ./
 RUN npm ci
 
