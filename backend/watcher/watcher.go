@@ -32,8 +32,8 @@ type Invoice struct {
 
 func Start() {
 	log.Println("Starting transaction watcher...")
-	// The primary watcher logic is now deprecated in favor of synchronous confirmation
-	// and the sweeper. This watcher remains only to recover from explicit error states.
+	// The primary watcher logic is now deprecated in favor of synchronous confirmation.
+	// This watcher remains only to recover from explicit error states.
 
 	// --- ADD ROUTINE 3: Reconciler Error Invoices ---
 	go func() {

@@ -12,7 +12,6 @@ Backend minimum:
 - `REDIS_URL`
 - `SOLANA_RPC_URL`
 - `USDC_MINT`
-- `MERCHANT_WALLET` (legacy paywall)
 - `AUTH_JWT_SECRET`
 - optional: `GOOGLE_CLIENT_ID`, `AUTH_COOKIE_*`
 
