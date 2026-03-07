@@ -157,13 +157,13 @@ function CheckoutInner() {
 
   const hydrateFromReceipt = (receipt: CheckoutStatus) => {
     setExistingReceipt(receipt);
-    setReference(receipt.reference || "");
-    setStatus(receipt.status || "");
-    setSolscanURL(receipt.solscanUrl || "");
-    setTxSignature(receipt.signature || "");
-    setManualSignature(receipt.signature || "");
+    setReference(receipt?.reference || "");
+    setStatus(receipt?.status || "");
+    setSolscanURL(receipt?.solscanUrl || "");
+    setTxSignature(receipt?.signature || "");
+    setManualSignature(receipt?.signature || "");
 
-    if (receipt.status === "paid" || receipt.status === "approved") {
+    if (receipt?.status === "paid" || receipt?.status === "approved") {
       clearPending();
     }
   };
@@ -187,8 +187,9 @@ function CheckoutInner() {
     }
 
     const data = await res.json();
+    hydrateFromReceipt(data.receipt as CheckoutStatus);
     if (data.receipt) {
-      hydrateFromReceipt(data.receipt as CheckoutStatus);
+      setInviteValid(true);
       return;
     }
     setInviteValid(Boolean(data.valid));
@@ -475,7 +476,10 @@ function CheckoutInner() {
               >
                 <p className="font-semibold">Step 2. Connect wallet</p>
                 <div className="mt-2">
-                  <WalletMultiButton className="!bg-slate-900 hover:!bg-slate-800 !rounded-lg !h-10" />
+                  <WalletMultiButton
+                    className="!bg-slate-900 hover:!bg-slate-800 !rounded-lg !h-10"
+                    disabled={inviteValid !== true || !inviteCode}
+                  />
                 </div>
               </div>
             )}
