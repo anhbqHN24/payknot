@@ -49,7 +49,6 @@ jobs:
             API_PROXY_TARGET=http://backend:8080
             NEXT_PUBLIC_SOLANA_RPC_URL=${{ vars.NEXT_PUBLIC_SOLANA_RPC_URL }}
             NEXT_PUBLIC_USDC_MINT=${{ vars.NEXT_PUBLIC_USDC_MINT }}
-            NEXT_PUBLIC_MERCHANT_WALLET=${{ vars.NEXT_PUBLIC_MERCHANT_WALLET }}
             NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
           tags: |
             ${{ env.IMAGE_REPO }}/${{ matrix.component }}:${{ github.sha }}
