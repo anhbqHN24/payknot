@@ -14,14 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  REGISTRY: ghcr.io
   IMAGE_REPO: ghcr.io/anhbqhn24/payknot
 
 jobs:
   build-and-push:
-    # Fast path: native ARM runner (no QEMU emulation)
-    runs-on: [self-hosted, linux, arm64]
-    timeout-minutes: 30
-
+    # Uses native ARM64 runners to avoid slow QEMU emulation
+    runs-on: ubuntu-24.04-arm 
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,43 +35,27 @@ jobs:
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push Backend (arm64 native)
+      - name: Build & Push ${{ matrix.component }}
         uses: docker/build-push-action@v6
         with:
-          context: ./backend
-          platforms: linux/arm64
+          context: ./${{ matrix.component }}
+          # No platforms tag needed because we are on a native arm64 runner
           push: true
-          provenance: false
-          tags: |
-            ${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
-            ${{ env.IMAGE_REPO }}/backend:latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
-
-      - name: Build & Push Frontend (arm64 native)
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          platforms: linux/arm64
-          push: true
-          provenance: false
           build-args: |
-            API_PROXY_TARGET=http://backend:8080
+            ${{ matrix.component == 'frontend' && 'API_PROXY_TARGET=http://backend:8080' || '' }}
           tags: |
-            ${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
-            ${{ env.IMAGE_REPO }}/frontend:latest
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend,mode=max
+            ${{ env.IMAGE_REPO }}/${{ matrix.component }}:${{ github.sha }}
+            ${{ env.IMAGE_REPO }}/${{ matrix.component }}:latest
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
     steps:
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -84,12 +71,12 @@ jobs:
             IMAGE_REPO="ghcr.io/anhbqhn24/payknot"
             IMAGE_TAG="${{ github.sha }}"
 
+            mkdir -p "$DEPLOY_ROOT"
             cd "$DEPLOY_ROOT"
 
-            # Login for image pulls using workflow token
-            echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-            # Compose override for image-based deploy
+            # Generate the dynamic override file
             cat > docker-compose.ghcr.yml <<EOF
             services:
               backend:
@@ -100,8 +87,9 @@ jobs:
                 pull_policy: always
             EOF
 
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull backend frontend
+            # Pull and Update
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build --force-recreate
 
-            docker compose ps
+            # Cleanup old layers to save space on t4g.small
             docker image prune -f
