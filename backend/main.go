@@ -6,7 +6,6 @@ import (
 	"solana_paywall/backend/api"
 	"solana_paywall/backend/database"
 	"solana_paywall/backend/middleware"
-	"solana_paywall/backend/sweeper"
 	"solana_paywall/backend/watcher"
 )
 
@@ -14,7 +13,6 @@ func main() {
 	database.Connect()
 	database.ConnectRedis()
 	watcher.Start()
-	sweeper.Start()
 
 	http.HandleFunc("/api/auth/register", api.Register)
 	http.HandleFunc("/api/auth/login", api.Login)

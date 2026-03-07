@@ -31,6 +31,21 @@ cd frontend
 npm run dev
 ```
 
+## Docker Compose (single env source)
+Use one env file for all services:
+```bash
+cp .env.compose.example .env.compose
+# edit values in .env.compose
+
+docker compose --env-file .env.compose up -d --build
+```
+
+Services:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8080
+- Postgres: localhost:5432
+- Redis: localhost:6379
+
 ## Required Backend Env
 - `DATABASE_URL`
 - `REDIS_URL`
