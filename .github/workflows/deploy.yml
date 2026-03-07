@@ -87,8 +87,8 @@ jobs:
 
             cd "$DEPLOY_ROOT"
 
-            # Login for image pulls (use PAT with read:packages)
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Login for image pulls using workflow token
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
             # Compose override for image-based deploy
             cat > docker-compose.ghcr.yml <<EOF
