@@ -104,8 +104,21 @@ jobs:
             # Validate compose syntax before deploy
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml config >/dev/null
 
-            # Pull and Update
+            # Pull target images first
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+
+            # Ensure DB dependencies are up before migration
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d postgres redis
+
+            # Run DB migrations (idempotent) before backend/frontend rollout
+            DB_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)"
+            docker run --rm \
+              --network payknot-deploy_default \
+              -v "$DEPLOY_ROOT/repo/backend/migrations:/migrations:ro" \
+              migrate/migrate:v4.18.3 \
+              -path=/migrations -database "$DB_URL" up
+
+            # Update application services
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build --force-recreate
 
             # Cleanup old layers to save space on t4g.small
