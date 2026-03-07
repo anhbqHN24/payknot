@@ -14,20 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_REPO: ghcr.io/anhbqhn24/payknot
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Fast path: native ARM runner (no QEMU emulation)
+    runs-on: [self-hosted, linux, arm64]
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,33 +34,35 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
-      - name: Build & Push Backend (arm64)
+      - name: Build & Push Backend (arm64 native)
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           platforms: linux/arm64
           push: true
+          provenance: false
           tags: |
             ${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
             ${{ env.IMAGE_REPO }}/backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
-      - name: Build & Push Frontend (arm64)
+      - name: Build & Push Frontend (arm64 native)
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           platforms: linux/arm64
           push: true
+          provenance: false
           build-args: |
             API_PROXY_TARGET=http://backend:8080
           tags: |
             ${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
             ${{ env.IMAGE_REPO }}/frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
     needs: build-and-push
@@ -88,7 +87,7 @@ jobs:
             cd "$DEPLOY_ROOT"
 
             # Login for image pulls using workflow token
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
             # Compose override for image-based deploy
             cat > docker-compose.ghcr.yml <<EOF
