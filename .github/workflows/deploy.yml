@@ -76,16 +76,19 @@ jobs:
 
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-            # Generate the dynamic override file
-            cat > docker-compose.ghcr.yml <<EOF
-            services:
-              backend:
-                image: ${IMAGE_REPO}/backend:${IMAGE_TAG}
-                pull_policy: always
-              frontend:
-                image: ${IMAGE_REPO}/frontend:${IMAGE_TAG}
-                pull_policy: always
-            EOF
+            # Generate the dynamic override file (printf avoids heredoc indentation issues)
+            printf '%s\n' \
+              'services:' \
+              '  backend:' \
+              "    image: ${IMAGE_REPO}/backend:${IMAGE_TAG}" \
+              '    pull_policy: always' \
+              '  frontend:' \
+              "    image: ${IMAGE_REPO}/frontend:${IMAGE_TAG}" \
+              '    pull_policy: always' \
+              > docker-compose.ghcr.yml
+
+            # Validate compose syntax before deploy
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml config >/dev/null
 
             # Pull and Update
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
