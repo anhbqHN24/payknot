@@ -23,23 +23,30 @@
 - `/events*` and `/checkouts*` host moderation endpoints require authenticated session.
 - Ownership enforcement by `owner_email` in SQL predicates.
 
-## Agent Key Access (Server-to-Server)
+## Agent Signature Access (Server-to-Server)
 
-For external AI agents/coding assistants (non-browser automation), selected protected routes can also accept an agent key when configured.
+For external AI agents/coding assistants (non-browser automation), selected protected routes can also accept signed requests.
 
 ### Required Env
-- `AGENT_ACCESS_KEY_SHA256`: SHA256 hex hash of the raw agent key
-- `AGENT_ACCESS_EMAIL`: owner email identity used for event ownership context
+- `AGENT_PUBLIC_KEYS_JSON`: JSON object mapping `agent_id -> base64(ed25519 public key)`
 
-### Request Headers
-- `X-Agent-Key: <raw-agent-key>`
-  or
-- `Authorization: Bearer <raw-agent-key>`
+### Required Headers
+- `X-Agent-Id: <agent-id>`
+- `X-Agent-Timestamp: <unix-seconds>`
+- `X-Agent-Signature: <base64-ed25519-signature>`
+
+### Signature Canonical String
+
+`METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + SHA256_HEX(BODY_RAW)`
+
+### Ownership Attribution
+- Valid signed requests run under synthetic identity: `owner_email = "agent:<agent-id>"`
+- This leaves per-agent ownership marks for created/managed events.
 
 ### Security Guidance
-- Never expose the raw key in frontend/browser code.
-- Rotate the key periodically.
-- Store key only in secret manager/runtime env.
+- Never expose private keys in frontend/browser code.
+- Rotate keypairs periodically and update `AGENT_PUBLIC_KEYS_JSON`.
+- Keep timestamps in short windows and use HTTPS.
 
 ## Security Baseline Checklist
 - Rotate `AUTH_JWT_SECRET` on incident

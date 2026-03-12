@@ -7,7 +7,8 @@ Guide for external AI agents / coding assistants to integrate Payknot-style even
 - Event creation + checkout link generation
 - Participant checkout and payment verification
 - Host-side deposit review flow
-- API-level integration path (without browser login) via agent key
+- API-level integration path (without browser login) via agent signatures
+- Per-agent ownership attribution via `owner_email = agent:<agent-id>`
 
 ## Recommended reading order
 
@@ -25,27 +26,35 @@ Guide for external AI agents / coding assistants to integrate Payknot-style even
 - Login/register/google auth
 - HttpOnly cookie session
 
-### B) Agent key (for server-to-server / autonomous agents)
-Use either header:
-- `X-Agent-Key: <plain-agent-key>`
-- `Authorization: Bearer <plain-agent-key>`
+### B) Agent signature auth (server-to-server)
+Headers required:
+- `X-Agent-Id: <agent-id>`
+- `X-Agent-Timestamp: <unix-seconds>`
+- `X-Agent-Signature: <base64-ed25519-signature>`
 
-Server validates SHA256 hash of provided key against env `AGENT_ACCESS_KEY_SHA256`.
+Signed message format:
 
-### Generate key hash
-
-```bash
-AGENT_ACCESS_KEY="replace-with-long-random-secret"
-echo -n "$AGENT_ACCESS_KEY" | sha256sum | awk '{print $1}'
+```text
+<METHOD>\n<PATH>\n<TIMESTAMP>\n<SHA256_HEX_OF_RAW_BODY>
 ```
 
-Set output to backend env:
-- `AGENT_ACCESS_KEY_SHA256=<hex-hash>`
-- `AGENT_ACCESS_EMAIL=<owner-email-for-created-events>`
+Example canonical message for `POST /api/events`:
+
+```text
+POST
+/api/events
+1710000000
+<sha256-hex-of-json-body>
+```
+
+### Server env
+Use one env var mapping multiple agents:
+- `AGENT_PUBLIC_KEYS_JSON` (JSON object)
+- Format: `{"agent-a":"<base64-public-key>","agent-b":"<base64-public-key>"}`
 
 ## Minimal integration flow for other products
 
-1. Call `POST /api/events` to create event.
+1. Sign request and call `POST /api/events`.
 2. Use returned checkout slug/url in your product.
 3. Call checkout APIs:
    - create invoice
@@ -55,7 +64,7 @@ Set output to backend env:
 
 ## Security notes
 
-- Treat agent key as secret; never embed in browser JS.
-- Rotate key periodically.
-- Restrict key use to backend services/agent runners.
-- If compromised, regenerate hash and redeploy.
+- Never embed private signing keys in frontend/browser code.
+- Keep private keys in agent runtime secret stores.
+- Rotate per-agent keypairs and update server public key map.
+- Timestamps are validated in a short time window to reduce replay risk.

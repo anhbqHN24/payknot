@@ -1,17 +1,20 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +41,6 @@ func SessionCookieName() string {
 }
 
 func sessionTTL() time.Duration {
-	// Default: 30 days.
 	return 30 * 24 * time.Hour
 }
 
@@ -171,47 +173,82 @@ func SessionExpiryFromNow() time.Time {
 	return time.Now().Add(sessionTTL())
 }
 
-func agentAccessKeyHash() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_ACCESS_KEY_SHA256")))
+func agentPublicKeys() map[string]ed25519.PublicKey {
+	raw := strings.TrimSpace(os.Getenv("AGENT_PUBLIC_KEYS_JSON"))
+	if raw == "" {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	out := make(map[string]ed25519.PublicKey, len(m))
+	for agentID, v := range m {
+		agentID = strings.TrimSpace(agentID)
+		if agentID == "" {
+			continue
+		}
+		keyBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(v))
+		if err != nil || len(keyBytes) != ed25519.PublicKeySize {
+			continue
+		}
+		out[agentID] = ed25519.PublicKey(keyBytes)
+	}
+	return out
 }
 
-func agentAccessEmail() string {
-	if v := strings.TrimSpace(os.Getenv("AGENT_ACCESS_EMAIL")); v != "" {
-		return v
+func verifyAgentSignature(r *http.Request) (AuthClaims, bool) {
+	agentID := strings.TrimSpace(r.Header.Get("X-Agent-Id"))
+	tsRaw := strings.TrimSpace(r.Header.Get("X-Agent-Timestamp"))
+	sigRaw := strings.TrimSpace(r.Header.Get("X-Agent-Signature"))
+	if agentID == "" || tsRaw == "" || sigRaw == "" {
+		return AuthClaims{}, false
 	}
-	return "agent.integration@local"
-}
 
-func extractAgentKey(r *http.Request) string {
-	if v := strings.TrimSpace(r.Header.Get("X-Agent-Key")); v != "" {
-		return v
+	ts, err := strconv.ParseInt(tsRaw, 10, 64)
+	if err != nil {
+		return AuthClaims{}, false
 	}
-	authz := strings.TrimSpace(r.Header.Get("Authorization"))
-	if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
-		return strings.TrimSpace(authz[7:])
-	}
-	return ""
-}
-
-func validateAgentKey(candidate string) bool {
-	hash := agentAccessKeyHash()
-	if hash == "" || candidate == "" {
-		return false
-	}
-	sum := sha256.Sum256([]byte(candidate))
-	candidateHash := hex.EncodeToString(sum[:])
-	return subtle.ConstantTimeCompare([]byte(candidateHash), []byte(hash)) == 1
-}
-
-func agentClaims() AuthClaims {
 	now := time.Now().Unix()
+	if ts < now-300 || ts > now+60 {
+		return AuthClaims{}, false
+	}
+
+	keys := agentPublicKeys()
+	pub, ok := keys[agentID]
+	if !ok {
+		return AuthClaims{}, false
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return AuthClaims{}, false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	bodyHash := sha256.Sum256(bodyBytes)
+
+	canonical := strings.Join([]string{
+		r.Method,
+		r.URL.Path,
+		tsRaw,
+		hex.EncodeToString(bodyHash[:]),
+	}, "\n")
+
+	sig, err := base64.StdEncoding.DecodeString(sigRaw)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return AuthClaims{}, false
+	}
+	if !ed25519.Verify(pub, []byte(canonical), sig) {
+		return AuthClaims{}, false
+	}
+
 	return AuthClaims{
 		UserID:    -1,
-		Email:     agentAccessEmail(),
-		SessionID: "agent-access",
+		Email:     "agent:" + agentID,
+		SessionID: "agent:" + agentID,
 		IssuedAt:  now,
 		ExpiresAt: now + 3600,
-	}
+	}, true
 }
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -245,8 +282,8 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func RequireAuthOrAgentKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if validateAgentKey(extractAgentKey(r)) {
-			ctx := context.WithValue(r.Context(), authClaimsKey, agentClaims())
+		if claims, ok := verifyAgentSignature(r); ok {
+			ctx := context.WithValue(r.Context(), authClaimsKey, claims)
 			next(w, r.WithContext(ctx))
 			return
 		}
