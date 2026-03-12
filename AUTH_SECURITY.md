@@ -23,6 +23,24 @@
 - `/events*` and `/checkouts*` host moderation endpoints require authenticated session.
 - Ownership enforcement by `owner_email` in SQL predicates.
 
+## Agent Key Access (Server-to-Server)
+
+For external AI agents/coding assistants (non-browser automation), selected protected routes can also accept an agent key when configured.
+
+### Required Env
+- `AGENT_ACCESS_KEY_SHA256`: SHA256 hex hash of the raw agent key
+- `AGENT_ACCESS_EMAIL`: owner email identity used for event ownership context
+
+### Request Headers
+- `X-Agent-Key: <raw-agent-key>`
+  or
+- `Authorization: Bearer <raw-agent-key>`
+
+### Security Guidance
+- Never expose the raw key in frontend/browser code.
+- Rotate the key periodically.
+- Store key only in secret manager/runtime env.
+
 ## Security Baseline Checklist
 - Rotate `AUTH_JWT_SECRET` on incident
 - Enable HTTPS and `AUTH_COOKIE_SECURE=true` in production

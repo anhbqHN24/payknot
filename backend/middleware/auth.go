@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -169,6 +171,49 @@ func SessionExpiryFromNow() time.Time {
 	return time.Now().Add(sessionTTL())
 }
 
+func agentAccessKeyHash() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_ACCESS_KEY_SHA256")))
+}
+
+func agentAccessEmail() string {
+	if v := strings.TrimSpace(os.Getenv("AGENT_ACCESS_EMAIL")); v != "" {
+		return v
+	}
+	return "agent.integration@local"
+}
+
+func extractAgentKey(r *http.Request) string {
+	if v := strings.TrimSpace(r.Header.Get("X-Agent-Key")); v != "" {
+		return v
+	}
+	authz := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+		return strings.TrimSpace(authz[7:])
+	}
+	return ""
+}
+
+func validateAgentKey(candidate string) bool {
+	hash := agentAccessKeyHash()
+	if hash == "" || candidate == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(candidate))
+	candidateHash := hex.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(candidateHash), []byte(hash)) == 1
+}
+
+func agentClaims() AuthClaims {
+	now := time.Now().Unix()
+	return AuthClaims{
+		UserID:    -1,
+		Email:     agentAccessEmail(),
+		SessionID: "agent-access",
+		IssuedAt:  now,
+		ExpiresAt: now + 3600,
+	}
+}
+
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, err := GetClaimsFromRequest(r)
@@ -195,6 +240,17 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		ctx := context.WithValue(r.Context(), authClaimsKey, claims)
 		next(w, r.WithContext(ctx))
+	}
+}
+
+func RequireAuthOrAgentKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if validateAgentKey(extractAgentKey(r)) {
+			ctx := context.WithValue(r.Context(), authClaimsKey, agentClaims())
+			next(w, r.WithContext(ctx))
+			return
+		}
+		RequireAuth(next)(w, r)
 	}
 }
 

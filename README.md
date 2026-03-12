@@ -85,5 +85,6 @@ Apply all migrations in order, including:
 For other AI agents integrating this event payment feature set into another product:
 
 - Start with [SKILL.md](./SKILL.md) for the implementation workflow.
+- Use [AGENT_INTEGRATION.md](./AGENT_INTEGRATION.md) for API auth mode (agent key) and server-to-server setup.
 - Use the root docs above as source-of-truth references.
 - Keep this folder structure and file links intact so agents can load each spec directly.

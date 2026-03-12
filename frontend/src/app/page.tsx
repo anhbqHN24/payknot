@@ -1040,271 +1040,223 @@ export default function Home() {
   }, []);
 
   const renderGeneralInfoForm = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <label
-        className={`text-sm ${eventSource === "custom" ? "col-span-2" : ""}`}
-      >
-        <span className="block mb-1 font-medium">
-          Event source <span className="text-rose-600">*</span>
-        </span>
-        <select
-          className={`border rounded-lg px-3 py-2 w-full ${
-            eventFormErrors.eventSource ? "border-rose-500" : ""
-          }`}
-          value={eventSource}
-          onChange={(e) => {
-            const nextSource = e.target.value as "luma" | "custom";
-            setEventSource(nextSource);
-            if (nextSource !== "luma") {
-              setImportedLumaImageURL("");
-              clearEventFormError("eventImageUrl");
-            }
-            clearEventFormError("eventSource");
-            clearEventFormError("sourceUrl");
-          }}
-        >
-          <option value="custom">Custom</option>
-          <option value="luma">Luma.com</option>
-        </select>
-        {eventFormErrors.eventSource && (
-          <p className="mt-1 text-xs text-rose-600">
-            {eventFormErrors.eventSource}
-          </p>
-        )}
-      </label>
-      {eventSource === "luma" && (
-        <label className="text-sm">
-          <span className="block mb-1 font-medium">
-            Luma event URL <span className="text-rose-600">*</span>
-          </span>
-          <div className="flex gap-2">
-            <input
-              className={`border rounded-lg px-3 py-2 w-full disabled:bg-slate-100 ${
-                eventFormErrors.sourceUrl ? "border-rose-500" : ""
+    <div className="space-y-4">
+      <section className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+        <h4 className="text-sm font-semibold text-slate-700">Source</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className={`text-sm ${eventSource === "custom" ? "md:col-span-2" : ""}`}>
+            <span className="block mb-1 font-medium">
+              Event source <span className="text-rose-600">*</span>
+            </span>
+            <select
+              className={`border rounded-lg px-3 py-2 w-full ${
+                eventFormErrors.eventSource ? "border-rose-500" : ""
               }`}
-              value={sourceUrl}
+              value={eventSource}
               onChange={(e) => {
-                setSourceURL(e.target.value);
+                const nextSource = e.target.value as "luma" | "custom";
+                setEventSource(nextSource);
+                if (nextSource !== "luma") {
+                  setImportedLumaImageURL("");
+                  clearEventFormError("eventImageUrl");
+                }
+                clearEventFormError("eventSource");
                 clearEventFormError("sourceUrl");
               }}
-              placeholder="https://lu.ma/..."
-            />
-            <button
-              onClick={importLumaEvent}
-              disabled={importingLuma}
-              className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-60"
             >
-              {importingLuma ? "..." : "Import"}
-            </button>
-          </div>
-          {eventFormErrors.sourceUrl && (
-            <p className="mt-1 text-xs text-rose-600">
-              {eventFormErrors.sourceUrl}
-            </p>
-          )}
-        </label>
-      )}
-
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">
-          Event title <span className="text-rose-600">*</span>
-        </span>
-        <input
-          className={`border rounded-lg px-3 py-2 w-full ${
-            eventFormErrors.title ? "border-rose-500" : ""
-          }`}
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            clearEventFormError("title");
-          }}
-          required
-        />
-        {eventFormErrors.title && (
-          <p className="mt-1 text-xs text-rose-600">{eventFormErrors.title}</p>
-        )}
-      </label>
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">Organizer name</span>
-        <input
-          className="border rounded-lg px-3 py-2 w-full"
-          value={organizerName}
-          onChange={(e) => setOrganizerName(e.target.value)}
-        />
-      </label>
-
-      <label className="text-sm md:col-span-2">
-        <span className="block mb-1 font-medium">Brief event description</span>
-        <div className="rounded-lg border border-slate-300 bg-white">
-          <div className="flex flex-wrap gap-1 border-b border-slate-200 px-2 py-1.5">
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => applyDescriptionCommand("bold")}
-            >
-              Bold
-            </button>
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => applyDescriptionCommand("italic")}
-            >
-              Italic
-            </button>
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => applyDescriptionCommand("insertUnorderedList")}
-            >
-              Bullet
-            </button>
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => applyDescriptionCommand("insertOrderedList")}
-            >
-              Numbered
-            </button>
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => applyDescriptionCommand("createLink")}
-            >
-              Link
-            </button>
-          </div>
-          <div
-            ref={descriptionEditorRef}
-            contentEditable
-            suppressContentEditableWarning
-            className="min-h-36 w-full px-3 py-2 text-sm outline-none [&_a]:text-blue-600 [&_a]:underline [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_strong]:font-semibold [&_ul]:ml-5 [&_ul]:list-disc"
-            onInput={(e) =>
-              setDescription(
-                sanitizeRichHtml((e.currentTarget as HTMLDivElement).innerHTML),
-              )
-            }
-          />
-        </div>
-      </label>
-
-      <div className="text-sm md:col-span-2">
-        <span className="block mb-1 font-medium">
-          Event image (square crop, JPG/PNG/WEBP, max 2MB)
-        </span>
-        <div ref={uploadTriggerRef} className="relative z-0 overflow-hidden">
-          <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
-            {isMobile ? (
-              <Upload {...uploadProps} showUploadList={false}>
-                <div className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-sm">
-                  Tap to upload event image
-                </div>
-              </Upload>
-            ) : (
-              <Upload.Dragger
-                {...uploadProps}
-                multiple={false}
-                showUploadList={false}
-                className="!w-full !min-h-[132px] !p-3"
-              >
-                <p className="text-sm font-medium">
-                  Drag & drop event image here, or click to upload
-                </p>
-                <p className="text-xs text-slate-500">
-                  Only 1 image. Crop is required before upload.
-                </p>
-              </Upload.Dragger>
+              <option value="custom">Custom</option>
+              <option value="luma">Luma.com</option>
+            </select>
+            {eventFormErrors.eventSource && (
+              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.eventSource}</p>
             )}
-          </ImgCrop>
+          </label>
+          {eventSource === "luma" && (
+            <label className="text-sm md:col-span-2">
+              <span className="block mb-1 font-medium">
+                Luma event URL <span className="text-rose-600">*</span>
+              </span>
+              <div className="flex gap-2">
+                <input
+                  className={`border rounded-lg px-3 py-2 w-full disabled:bg-slate-100 ${
+                    eventFormErrors.sourceUrl ? "border-rose-500" : ""
+                  }`}
+                  value={sourceUrl}
+                  onChange={(e) => {
+                    setSourceURL(e.target.value);
+                    clearEventFormError("sourceUrl");
+                  }}
+                  placeholder="https://lu.ma/..."
+                />
+                <button
+                  onClick={importLumaEvent}
+                  disabled={importingLuma}
+                  className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-60"
+                >
+                  {importingLuma ? "..." : "Import"}
+                </button>
+              </div>
+              {eventFormErrors.sourceUrl && (
+                <p className="mt-1 text-xs text-rose-600">{eventFormErrors.sourceUrl}</p>
+              )}
+            </label>
+          )}
         </div>
-        {importedLumaImageURL && (
-          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
-            <p className="text-xs text-amber-700">
-              Imported Luma image detected. Upload and crop one image before
-              saving.
-            </p>
-            <img
-              src={importedLumaImageURL}
-              alt="Imported Luma event"
-              className="mt-2 h-20 w-20 rounded border object-cover"
+      </section>
+
+      <section className="rounded-lg border border-slate-200 p-3 space-y-3">
+        <h4 className="text-sm font-semibold text-slate-700">General info</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm md:col-span-2">
+            <span className="block mb-1 font-medium">
+              Event title <span className="text-rose-600">*</span>
+            </span>
+            <input
+              className={`border rounded-lg px-3 py-2 w-full ${
+                eventFormErrors.title ? "border-rose-500" : ""
+              }`}
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                clearEventFormError("title");
+              }}
+              required
+            />
+            {eventFormErrors.title && (
+              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.title}</p>
+            )}
+          </label>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Organizer name</span>
+            <input
+              className="border rounded-lg px-3 py-2 w-full"
+              value={organizerName}
+              onChange={(e) => setOrganizerName(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Location link</span>
+            <input
+              className="border rounded-lg px-3 py-2 w-full"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Event date & time</span>
+            <input
+              className="border rounded-lg px-3 py-2 w-full"
+              type="datetime-local"
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">
+              Checkout expires at <span className="text-rose-600">*</span>
+            </span>
+            <input
+              className={`border rounded-lg px-3 py-2 w-full ${
+                eventFormErrors.checkoutExpiresAt ? "border-rose-500" : ""
+              }`}
+              type="datetime-local"
+              value={checkoutExpiresAt}
+              onChange={(e) => {
+                setCheckoutExpiresAt(e.target.value);
+                clearEventFormError("checkoutExpiresAt");
+              }}
+            />
+            {eventFormErrors.checkoutExpiresAt && (
+              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.checkoutExpiresAt}</p>
+            )}
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 p-3 space-y-3">
+        <h4 className="text-sm font-semibold text-slate-700">Description</h4>
+        <label className="text-sm block">
+          <span className="block mb-1 font-medium">Brief event description</span>
+          <div className="rounded-lg border border-slate-300 bg-white">
+            <div className="flex flex-wrap gap-1 border-b border-slate-200 px-2 py-1.5">
+              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("bold")}>Bold</button>
+              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("italic")}>Italic</button>
+              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("insertUnorderedList")}>Bullet</button>
+              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("insertOrderedList")}>Numbered</button>
+              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("createLink")}>Link</button>
+            </div>
+            <div
+              ref={descriptionEditorRef}
+              contentEditable
+              suppressContentEditableWarning
+              className="min-h-36 w-full px-3 py-2 text-sm outline-none [&_a]:text-blue-600 [&_a]:underline [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_strong]:font-semibold [&_ul]:ml-5 [&_ul]:list-disc"
+              onInput={(e) =>
+                setDescription(
+                  sanitizeRichHtml((e.currentTarget as HTMLDivElement).innerHTML),
+                )
+              }
             />
           </div>
-        )}
-        {eventImageUrl && (
-          <img
-            src={eventImageUrl}
-            alt="Event preview"
-            className="mt-2 h-28 w-28 rounded-lg border object-cover"
-          />
-        )}
-        {eventFormErrors.eventImageUrl && (
-          <p className="mt-1 text-xs text-rose-600">
-            {eventFormErrors.eventImageUrl}
-          </p>
-        )}
-      </div>
+        </label>
+      </section>
 
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">Event date & time</span>
-        <input
-          className="border rounded-lg px-3 py-2 w-full"
-          type="datetime-local"
-          value={eventDate}
-          onChange={(e) => setEventDate(e.target.value)}
-        />
-      </label>
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">
-          Checkout expires at <span className="text-rose-600">*</span>
-        </span>
-        <input
-          className={`border rounded-lg px-3 py-2 w-full ${
-            eventFormErrors.checkoutExpiresAt ? "border-rose-500" : ""
-          }`}
-          type="datetime-local"
-          value={checkoutExpiresAt}
-          onChange={(e) => {
-            setCheckoutExpiresAt(e.target.value);
-            clearEventFormError("checkoutExpiresAt");
-          }}
-        />
-        {eventFormErrors.checkoutExpiresAt && (
-          <p className="mt-1 text-xs text-rose-600">
-            {eventFormErrors.checkoutExpiresAt}
-          </p>
-        )}
-      </label>
-      <label className="text-sm md:col-span-2">
-        <span className="block mb-1 font-medium">Location link</span>
-        <input
-          className="border rounded-lg px-3 py-2 w-full"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        />
-      </label>
+      <section className="rounded-lg border border-slate-200 p-3 space-y-3">
+        <h4 className="text-sm font-semibold text-slate-700">Event image</h4>
+        <div className="text-sm">
+          <span className="block mb-1 font-medium">
+            Event image (square crop, JPG/PNG/WEBP, max 2MB)
+          </span>
+          <div ref={uploadTriggerRef} className="relative z-0 overflow-hidden">
+            <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
+              {isMobile ? (
+                <Upload {...uploadProps} showUploadList={false}>
+                  <div className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-sm">
+                    Tap to upload event image
+                  </div>
+                </Upload>
+              ) : (
+                <Upload.Dragger
+                  {...uploadProps}
+                  multiple={false}
+                  showUploadList={false}
+                  className="!w-full !min-h-[132px] !p-3"
+                >
+                  <p className="text-sm font-medium">Drag & drop event image here, or click to upload</p>
+                  <p className="text-xs text-slate-500">Only 1 image. Crop is required before upload.</p>
+                </Upload.Dragger>
+              )}
+            </ImgCrop>
+          </div>
+          {importedLumaImageURL && (
+            <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
+              <p className="text-xs text-amber-700">
+                Imported Luma image detected. Upload and crop one image before saving.
+              </p>
+              <img src={importedLumaImageURL} alt="Imported Luma event" className="mt-2 h-20 w-20 rounded border object-cover" />
+            </div>
+          )}
+          {eventImageUrl && (
+            <img src={eventImageUrl} alt="Event preview" className="mt-2 h-28 w-28 rounded-lg border object-cover" />
+          )}
+          {eventFormErrors.eventImageUrl && (
+            <p className="mt-1 text-xs text-rose-600">{eventFormErrors.eventImageUrl}</p>
+          )}
+        </div>
+      </section>
+
       {detailMode === "edit" && selectedEvent && (
-        <div className="md:col-span-2 rounded-lg border bg-slate-50 p-3">
+        <div className="rounded-lg border bg-slate-50 p-3">
           <p className="text-xs text-slate-500 mb-1">Checkout link</p>
           <div className="font-mono text-xs break-all">{fullCheckoutLink}</div>
           <div className="flex gap-2 mt-2">
-            <button
-              onClick={() => copyText(fullCheckoutLink)}
-              className="rounded-lg border px-2.5 py-1 text-xs"
-            >
-              Copy Link
-            </button>
-            <a
-              href={`/checkout/${selectedEvent.slug}`}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border px-2.5 py-1 text-xs"
-            >
-              Open Checkout
-            </a>
+            <button onClick={() => copyText(fullCheckoutLink)} className="rounded-lg border px-2.5 py-1 text-xs">Copy Link</button>
+            <a href={`/checkout/${selectedEvent.slug}`} target="_blank" rel="noreferrer" className="rounded-lg border px-2.5 py-1 text-xs">Open Checkout</a>
           </div>
         </div>
       )}
     </div>
   );
+
 
   const renderCheckoutFormSection = () => (
     <div className="space-y-3">
