@@ -1,0 +1,28 @@
+{
+  "name": "Payknot Event Checkout Service",
+  "base_url": "https://pay.crea8r.xyz",
+  "docs_index": "https://pay.crea8r.xyz/agent-docs/INDEX.md",
+  "openapi": "https://pay.crea8r.xyz/openapi.json",
+  "auth": {
+    "mode": "ed25519-request-signature",
+    "headers": [
+      "X-Agent-Id",
+      "X-Agent-Timestamp",
+      "X-Agent-Signature"
+    ],
+    "canonical_string": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
+  },
+  "key_registry_endpoints": {
+    "list": "/api/agent-keys",
+    "upsert": "/api/agent-keys",
+    "revoke": "/api/agent-keys/revoke"
+  },
+  "core_endpoints": {
+    "events": "/api/events",
+    "event_subroutes": "/api/events/{id}",
+    "checkout_invoice": "/api/checkout/invoice",
+    "checkout_confirm": "/api/checkout/confirm",
+    "checkout_status": "/api/checkout/status?reference=...",
+    "checkout_public": "/api/checkout/{slug}"
+  }
+}

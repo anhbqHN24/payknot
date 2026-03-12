@@ -1,0 +1,58 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Payknot Event Checkout API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://pay.crea8r.xyz/api" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "AgentSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Agent-Signature",
+        "description": "Also requires X-Agent-Id and X-Agent-Timestamp. Signature uses Ed25519 over canonical string: METHOD + \\n + PATH + \\n + TIMESTAMP + \\n + SHA256_HEX(BODY_RAW)."
+      }
+    }
+  },
+  "paths": {
+    "/events": {
+      "get": {
+        "summary": "List events for current owner identity",
+        "security": [{ "AgentSignature": [] }]
+      },
+      "post": {
+        "summary": "Create event",
+        "security": [{ "AgentSignature": [] }]
+      }
+    },
+    "/events/{id}": {
+      "put": { "summary": "Update event", "security": [{ "AgentSignature": [] }] },
+      "delete": { "summary": "Delete event", "security": [{ "AgentSignature": [] }] }
+    },
+    "/events/import/luma": {
+      "post": { "summary": "Import event metadata from Luma URL", "security": [{ "AgentSignature": [] }] }
+    },
+    "/agent-keys": {
+      "get": { "summary": "List agent keys (host-session auth)" },
+      "post": { "summary": "Upsert agent key (host-session auth)" }
+    },
+    "/agent-keys/revoke": {
+      "post": { "summary": "Revoke agent key (host-session auth)" }
+    },
+    "/checkout/invoice": {
+      "post": { "summary": "Create checkout invoice/session" }
+    },
+    "/checkout/confirm": {
+      "post": { "summary": "Confirm payment" }
+    },
+    "/checkout/status": {
+      "get": { "summary": "Get checkout status by reference" }
+    },
+    "/checkout/{slug}": {
+      "get": { "summary": "Get public checkout event metadata" }
+    }
+  }
+}
