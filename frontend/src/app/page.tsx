@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import ImgCrop from "antd-img-crop";
 import { Upload, message } from "antd";
 import type { UploadFile, UploadProps } from "antd/es/upload/interface";
@@ -16,11 +17,17 @@ type CreateEventResponse = {
   eventId: number;
   slug: string;
   checkoutUrl: string;
-  inviteCodes: string[];
   eventImageUrl: string;
+  checkoutExpiresAt: string;
   amountUsdc: string;
-  network: string;
   merchantWallet: string;
+  eventSource: "luma" | "custom";
+  sourceUrl: string;
+  participantFormSchema: CheckoutField[];
+  paymentMethods: {
+    wallet: boolean;
+    qr: boolean;
+  };
 };
 
 type EventSummary = {
@@ -30,11 +37,18 @@ type EventSummary = {
   description: string;
   eventImageUrl: string;
   eventDate: string;
+  checkoutExpiresAt: string;
   location: string;
   organizerName: string;
   merchantWallet: string;
   amountUsdc: string;
-  network: string;
+  eventSource: "luma" | "custom";
+  sourceUrl: string;
+  participantFormSchema: CheckoutField[];
+  paymentMethods: {
+    wallet: boolean;
+    qr: boolean;
+  };
   createdAt: string;
 };
 
@@ -46,14 +60,16 @@ type EventCheckoutRow = {
   status: string;
   createdAt: string;
   paidAt?: string;
-  approvedAt?: string;
-  approvedBy?: string;
-  inviteCode: string;
-  notes?: string;
+  participantData?: Record<string, string>;
+};
+
+type CheckoutField = {
+  field_name: string;
+  required: boolean;
 };
 
 type EventSortField = "title" | "organizerName" | "eventDate" | "amountUsdc";
-type DetailTab = "info" | "invites" | "deposits";
+type DetailTab = "info" | "checkoutForm" | "deposits";
 
 const EVENT_PAGE_SIZE = 10;
 
@@ -87,6 +103,47 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
+function toLocalDateTimeInput(value: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function datetimeLocalToRFC3339Local(value: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  const ss = "00";
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const oh = pad(Math.floor(abs / 60));
+  const om = pad(abs % 60);
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${sign}${oh}:${om}`;
+}
+
+function sanitizeRichHtml(input: string) {
+  if (!input) return "";
+  return input
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "");
+}
+
 export default function Home() {
   const googleInitializedRef = useRef(false);
   const detailCloseTimerRef = useRef<number | null>(null);
@@ -104,12 +161,22 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
+  const [checkoutExpiresAt, setCheckoutExpiresAt] = useState("");
   const [location, setLocation] = useState("");
   const [organizerName, setOrganizerName] = useState("");
   const [merchantWallet, setMerchantWallet] = useState("");
   const [amountUsdc, setAmountUsdc] = useState("10");
-  const [network, setNetwork] = useState("devnet");
   const [eventImageUrl, setEventImageUrl] = useState("");
+  const [eventSource, setEventSource] = useState<"luma" | "custom">("custom");
+  const [sourceUrl, setSourceURL] = useState("");
+  const [importingLuma, setImportingLuma] = useState(false);
+  const [importedLumaImageURL, setImportedLumaImageURL] = useState("");
+  const uploadTriggerRef = useRef<HTMLDivElement | null>(null);
+  const descriptionEditorRef = useRef<HTMLDivElement | null>(null);
+  const [participantFields, setParticipantFields] = useState<CheckoutField[]>([
+    { field_name: "name", required: true },
+    { field_name: "email", required: true },
+  ]);
   const [imageFileList, setImageFileList] = useState<UploadFile[]>([]);
 
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -118,12 +185,13 @@ export default function Home() {
   const [detailClosing, setDetailClosing] = useState(false);
   const [detailMode, setDetailMode] = useState<"create" | "edit">("create");
   const [detailTab, setDetailTab] = useState<DetailTab>("info");
-  const [showInvitesSection, setShowInvitesSection] = useState(true);
+  const [showCheckoutFormSection, setShowCheckoutFormSection] = useState(true);
   const [showDepositsSection, setShowDepositsSection] = useState(true);
-  const [inviteAccordionOpen, setInviteAccordionOpen] = useState(true);
+  const [checkoutFormAccordionOpen, setCheckoutFormAccordionOpen] =
+    useState(true);
   const [depositAccordionOpen, setDepositAccordionOpen] = useState(true);
-  const [inviteSearchTerm, setInviteSearchTerm] = useState("");
-  const [invitePage, setInvitePage] = useState(1);
+  const [checkoutFormSearchTerm, setCheckoutFormSearchTerm] = useState("");
+  const [checkoutFormPage, setCheckoutFormPage] = useState(1);
   const [depositSearchTerm, setDepositSearchTerm] = useState("");
   const [depositPage, setDepositPage] = useState(1);
   const [isMobile, setIsMobile] = useState(false);
@@ -139,15 +207,13 @@ export default function Home() {
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [eventFormErrors, setEventFormErrors] = useState<
+    Record<string, string>
+  >({});
   const [loadingEvents, setLoadingEvents] = useState(false);
-
-  const [inviteCodes, setInviteCodes] = useState<string[]>([]);
-  const [newCodeCount, setNewCodeCount] = useState("20");
 
   const [checkouts, setCheckouts] = useState<EventCheckoutRow[]>([]);
   const [loadingCheckouts, setLoadingCheckouts] = useState(false);
-  const [approvingID, setApprovingID] = useState<number | null>(null);
-  const [rejectingID, setRejectingID] = useState<number | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -255,6 +321,10 @@ export default function Home() {
     () => events.find((e) => e.eventId === selectedEventID) || null,
     [events, selectedEventID],
   );
+  const hasPaidDeposits = useMemo(
+    () => checkouts.some((c) => c.status === "paid"),
+    [checkouts],
+  );
 
   const filteredAndSortedEvents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -331,30 +401,32 @@ export default function Home() {
     return `${window.location.origin}/checkout/${selectedEvent.slug}`;
   }, [selectedEvent]);
 
-  const filteredInvites = useMemo(() => {
-    const q = inviteSearchTerm.trim().toLowerCase();
-    return inviteCodes.filter((code) => code.toLowerCase().includes(q));
-  }, [inviteCodes, inviteSearchTerm]);
+  const filteredCheckoutFields = useMemo(() => {
+    const q = checkoutFormSearchTerm.trim().toLowerCase();
+    return participantFields.filter((field) => {
+      const haystack = `${field.field_name}`.toLowerCase();
+      return q ? haystack.includes(q) : true;
+    });
+  }, [participantFields, checkoutFormSearchTerm]);
 
-  const inviteTotalPages = useMemo(
-    () => Math.max(1, Math.ceil(filteredInvites.length / 10)),
-    [filteredInvites.length],
+  const checkoutFormTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredCheckoutFields.length / 10)),
+    [filteredCheckoutFields.length],
   );
-  const pagedInvites = useMemo(() => {
-    const start = (invitePage - 1) * 10;
-    return filteredInvites.slice(start, start + 10);
-  }, [filteredInvites, invitePage]);
+  const pagedCheckoutFields = useMemo(() => {
+    const start = (checkoutFormPage - 1) * 10;
+    return filteredCheckoutFields.slice(start, start + 10);
+  }, [filteredCheckoutFields, checkoutFormPage]);
 
   const filteredDeposits = useMemo(() => {
     const q = depositSearchTerm.trim().toLowerCase();
     return checkouts.filter((row) => {
       const haystack = [
-        row.inviteCode,
         row.walletAddress,
         row.reference,
         row.signature,
         row.status,
-        row.notes || "",
+        JSON.stringify(row.participantData || {}),
       ]
         .join(" ")
         .toLowerCase();
@@ -379,7 +451,7 @@ export default function Home() {
   useEffect(() => {
     if (!selectedEvent) return;
     fillFormFromEvent(selectedEvent);
-    void loadInviteCodes(selectedEvent.eventId);
+    setCheckouts([]);
     void refreshCheckouts(selectedEvent.eventId);
   }, [selectedEventID]);
 
@@ -417,12 +489,14 @@ export default function Home() {
   }, [isMobile, desktopHeaderHeight]);
 
   useEffect(() => {
-    setInvitePage(1);
-  }, [inviteSearchTerm, selectedEventID, inviteCodes.length]);
+    setCheckoutFormPage(1);
+  }, [checkoutFormSearchTerm, selectedEventID, participantFields.length]);
 
   useEffect(() => {
-    if (invitePage > inviteTotalPages) setInvitePage(inviteTotalPages);
-  }, [invitePage, inviteTotalPages]);
+    if (checkoutFormPage > checkoutFormTotalPages) {
+      setCheckoutFormPage(checkoutFormTotalPages);
+    }
+  }, [checkoutFormPage, checkoutFormTotalPages]);
 
   useEffect(() => {
     setDepositPage(1);
@@ -445,15 +519,26 @@ export default function Home() {
   const fillFormFromEvent = (ev: EventSummary) => {
     setTitle(ev.title);
     setDescription(ev.description || "");
-    setEventDate(
-      ev.eventDate ? new Date(ev.eventDate).toISOString().slice(0, 16) : "",
+    setEventDate(ev.eventDate ? toLocalDateTimeInput(ev.eventDate) : "");
+    setCheckoutExpiresAt(
+      ev.checkoutExpiresAt ? toLocalDateTimeInput(ev.checkoutExpiresAt) : "",
     );
     setLocation(ev.location || "");
     setOrganizerName(ev.organizerName || "");
     setMerchantWallet(ev.merchantWallet || "");
     setAmountUsdc(ev.amountUsdc || "10");
-    setNetwork(ev.network || "devnet");
     setEventImageUrl(ev.eventImageUrl || "");
+    setEventSource(ev.eventSource || "custom");
+    setSourceURL(ev.sourceUrl || "");
+    setParticipantFields(
+      ev.participantFormSchema?.length
+        ? ev.participantFormSchema
+        : [
+            { field_name: "name", required: true },
+            { field_name: "email", required: true },
+          ],
+    );
+    setImportedLumaImageURL("");
     setImageFileList([]);
   };
 
@@ -461,13 +546,30 @@ export default function Home() {
     setTitle("");
     setDescription("");
     setEventDate("");
+    setCheckoutExpiresAt("");
     setLocation("");
     setOrganizerName("");
     setMerchantWallet("");
     setAmountUsdc("10");
-    setNetwork("devnet");
     setEventImageUrl("");
+    setEventSource("custom");
+    setSourceURL("");
+    setImportedLumaImageURL("");
+    setParticipantFields([
+      { field_name: "name", required: true },
+      { field_name: "email", required: true },
+    ]);
     setImageFileList([]);
+    setEventFormErrors({});
+  };
+
+  const clearEventFormError = (field: string) => {
+    setEventFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   };
 
   const loadEvents = async () => {
@@ -492,9 +594,11 @@ export default function Home() {
   const createEvent = async () => {
     if (!currentUser) {
       setError("Please login first.");
+      void message.error("Please login first.");
       return;
     }
 
+    const nextDescription = sanitizeRichHtml(description);
     setError("");
     setCreating(true);
     try {
@@ -504,14 +608,18 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
-          description,
+          description: nextDescription,
           eventImageUrl,
-          eventDate: eventDate ? new Date(eventDate).toISOString() : "",
+          eventDate: eventDate ? datetimeLocalToRFC3339Local(eventDate) : "",
+          checkoutExpiresAt: datetimeLocalToRFC3339Local(checkoutExpiresAt),
           location,
           organizerName,
           merchantWallet,
           amountUsdc: Number(amountUsdc),
-          network,
+          eventSource,
+          sourceUrl,
+          participantFormSchema: participantFields,
+          paymentMethods: { wallet: true, qr: true },
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -519,9 +627,11 @@ export default function Home() {
       await loadEvents();
       setSelectedEventID(data.eventId);
       setDetailMode("edit");
-      setInviteCodes(data.inviteCodes ?? []);
+      void message.success("Event created successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create event");
+      const msg = err instanceof Error ? err.message : "Failed to create event";
+      setError(msg);
+      void message.error(msg);
     } finally {
       setCreating(false);
     }
@@ -529,6 +639,7 @@ export default function Home() {
 
   const updateEvent = async () => {
     if (!currentUser || !selectedEvent) return;
+    const nextDescription = sanitizeRichHtml(description);
     setUpdating(true);
     setError("");
     try {
@@ -538,26 +649,79 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
-          description,
+          description: nextDescription,
           eventImageUrl,
-          eventDate: eventDate ? new Date(eventDate).toISOString() : "",
+          eventDate: eventDate ? datetimeLocalToRFC3339Local(eventDate) : "",
+          checkoutExpiresAt: datetimeLocalToRFC3339Local(checkoutExpiresAt),
           location,
           organizerName,
           merchantWallet,
           amountUsdc: Number(amountUsdc),
-          network,
+          eventSource,
+          sourceUrl,
+          participantFormSchema: participantFields,
+          paymentMethods: { wallet: true, qr: true },
         }),
       });
       if (!res.ok) throw new Error(await res.text());
       await loadEvents();
+      void message.success("Event updated successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update event");
+      const msg = err instanceof Error ? err.message : "Failed to update event";
+      setError(msg);
+      void message.error(msg);
     } finally {
       setUpdating(false);
     }
   };
 
+  const validateEventForm = () => {
+    const nextErrors: Record<string, string> = {};
+    if (!eventSource.trim()) {
+      nextErrors.eventSource = "Event source is required.";
+    }
+    if (!title.trim()) {
+      nextErrors.title = "Event title is required.";
+    }
+    if (eventSource === "luma" && !sourceUrl.trim()) {
+      nextErrors.sourceUrl =
+        "Luma event URL is required when event source is Luma.com.";
+    }
+    if (eventSource === "luma" && importedLumaImageURL && !eventImageUrl) {
+      nextErrors.eventImageUrl =
+        "Please upload and crop the imported Luma image before saving.";
+    }
+    if (!checkoutExpiresAt.trim()) {
+      nextErrors.checkoutExpiresAt = "Checkout expires at is required.";
+    }
+    if (!merchantWallet.trim()) {
+      nextErrors.merchantWallet = "Merchant wallet address is required.";
+    }
+    if (!amountUsdc.trim() || Number(amountUsdc) <= 0) {
+      nextErrors.amountUsdc =
+        "USDC amount is required and must be greater than 0.";
+    }
+
+    setEventFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      const msg = Object.values(nextErrors)[0];
+      setError(msg);
+      void message.error(msg);
+      return false;
+    }
+    setError("");
+    return true;
+  };
+
   const saveEventChanges = async () => {
+    if (detailMode === "edit" && hasPaidDeposits) {
+      const msg =
+        "This event has successful participant deposits and can no longer be edited.";
+      setError(msg);
+      void message.error(msg);
+      return;
+    }
+    if (!validateEventForm()) return;
     if (detailMode === "create") {
       await createEvent();
       return;
@@ -567,6 +731,13 @@ export default function Home() {
 
   const deleteEvent = async () => {
     if (!currentUser || !selectedEvent) return;
+    if (hasPaidDeposits) {
+      const msg =
+        "This event has successful participant deposits and can no longer be deleted.";
+      setError(msg);
+      void message.error(msg);
+      return;
+    }
     const ok = window.confirm(`Delete event \"${selectedEvent.title}\"?`);
     if (!ok) return;
 
@@ -579,53 +750,18 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(await res.text());
       await loadEvents();
-      setInviteCodes([]);
       setCheckouts([]);
       if (selectedEventID === selectedEvent.eventId) {
         setSelectedEventID(null);
         resetForm();
       }
+      void message.success("Event deleted successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete event");
+      const msg = err instanceof Error ? err.message : "Failed to delete event";
+      setError(msg);
+      void message.error(msg);
     } finally {
       setDeleting(false);
-    }
-  };
-
-  const loadInviteCodes = async (eventID: number) => {
-    try {
-      const res = await fetch(`/api/events/${eventID}/invite-codes`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setInviteCodes((data.codes ?? []) as string[]);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load invite codes",
-      );
-    }
-  };
-
-  const generateCodes = async () => {
-    if (!selectedEvent) return;
-    setError("");
-    try {
-      const res = await fetch(
-        `/api/events/${selectedEvent.eventId}/invite-codes`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ count: Number(newCodeCount) }),
-        },
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const incoming: string[] = data.codes ?? [];
-      setInviteCodes((prev) => [...prev, ...incoming]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate codes");
     }
   };
 
@@ -647,50 +783,103 @@ export default function Home() {
     }
   };
 
-  const approveCheckout = async (checkoutID: number) => {
-    setApprovingID(checkoutID);
+  const importLumaEvent = async () => {
+    if (eventSource !== "luma" || !sourceUrl.trim()) return;
+    setImportingLuma(true);
     setError("");
     try {
-      const res = await fetch(`/api/checkouts/${checkoutID}/approve`, {
+      const res = await fetch("/api/events/import/luma", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          approvedBy: organizerName || currentUser?.name || "organizer",
-        }),
+        body: JSON.stringify({ url: sourceUrl.trim() }),
       });
       if (!res.ok) throw new Error(await res.text());
-      await refreshCheckouts();
+      const data = await res.json();
+      if (data.title) setTitle(data.title);
+      if (data.descriptionHtml) {
+        setDescription(sanitizeRichHtml(data.descriptionHtml));
+      } else if (data.description) {
+        setDescription(sanitizeRichHtml(data.description));
+      }
+      if (data.eventDate) {
+        setEventDate(toLocalDateTimeInput(data.eventDate));
+      }
+      if (data.location) setLocation(data.location);
+      if (data.organizerName) setOrganizerName(data.organizerName);
+      if (data.eventImageUrl) {
+        setImportedLumaImageURL(data.eventImageUrl);
+        setEventImageUrl("");
+        setImageFileList([]);
+        try {
+          const imageRes = await fetch(data.eventImageUrl);
+          if (!imageRes.ok) throw new Error("Unable to load imported image");
+          const blob = await imageRes.blob();
+          const mime = blob.type || "image/jpeg";
+          const ext =
+            mime === "image/png"
+              ? "png"
+              : mime === "image/webp"
+                ? "webp"
+                : "jpg";
+          const importedFile = new File([blob], `luma-import.${ext}`, {
+            type: mime,
+          });
+          const input = uploadTriggerRef.current?.querySelector(
+            "input[type='file']",
+          ) as HTMLInputElement | null;
+          if (!input) throw new Error("Upload input unavailable");
+          const dt = new DataTransfer();
+          dt.items.add(importedFile);
+          Object.defineProperty(input, "files", {
+            configurable: true,
+            value: dt.files,
+          });
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          void message.success("Luma image imported. Crop modal opened.");
+        } catch {
+          void message.info(
+            "Luma image imported. Click upload area to crop before saving.",
+          );
+        }
+      }
+      if (data.warning) setError(data.warning);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Approval failed");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to import Luma event. If private, set event to public.",
+      );
     } finally {
-      setApprovingID(null);
+      setImportingLuma(false);
     }
   };
 
-  const rejectCheckout = async (checkoutID: number) => {
-    const reason = window.prompt("Reason for rejection:", "");
-    if (!reason || !reason.trim()) return;
-
-    setRejectingID(checkoutID);
-    setError("");
-    try {
-      const res = await fetch(`/api/checkouts/${checkoutID}/reject`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rejectedBy: organizerName || currentUser?.name || "organizer",
-          reason: reason.trim(),
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      await refreshCheckouts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Reject failed");
-    } finally {
-      setRejectingID(null);
+  useEffect(() => {
+    if (!descriptionEditorRef.current) return;
+    if (descriptionEditorRef.current.innerHTML !== description) {
+      descriptionEditorRef.current.innerHTML = description;
     }
+  }, [description]);
+
+  const applyDescriptionCommand = (command: string) => {
+    if (!descriptionEditorRef.current) return;
+    descriptionEditorRef.current.focus();
+    if (command === "createLink") {
+      const href = window.prompt("Enter URL");
+      if (!href) return;
+      document.execCommand("createLink", false, href);
+    } else {
+      document.execCommand(command, false);
+    }
+    setDescription(sanitizeRichHtml(descriptionEditorRef.current.innerHTML));
+  };
+
+  const addParticipantField = () => {
+    setParticipantFields((prev) => [
+      ...prev,
+      { field_name: "", required: false },
+    ]);
   };
 
   const copyText = async (text: string) => {
@@ -704,7 +893,6 @@ export default function Home() {
 
   const uploadProps: UploadProps = {
     accept: "image/jpeg,image/png,image/webp",
-    listType: "picture-card",
     fileList: imageFileList,
     maxCount: 1,
     beforeUpload: (file) => {
@@ -719,17 +907,23 @@ export default function Home() {
         void message.error("Image must be <= 2MB");
         return Upload.LIST_IGNORE;
       }
-      return false;
+      // Must return the file so antd-img-crop can pass the cropped output through.
+      return file;
     },
     onChange: async ({ fileList: list }) => {
-      setImageFileList(list.slice(-1));
-      const target = list[0]?.originFileObj as File | undefined;
+      const latest = list.at(-1);
+      const nextList = latest ? [latest] : [];
+      setImageFileList(nextList);
+      const target = (latest?.originFileObj ??
+        (latest as unknown as File | undefined)) as File | undefined;
       if (!target) {
         setEventImageUrl("");
         return;
       }
       const b64 = await toBase64(target);
       setEventImageUrl(b64);
+      setImportedLumaImageURL("");
+      clearEventFormError("eventImageUrl");
     },
     onRemove: () => {
       setImageFileList([]);
@@ -795,7 +989,6 @@ export default function Home() {
     setCurrentUser(null);
     setEvents([]);
     setSelectedEventID(null);
-    setInviteCodes([]);
     setCheckouts([]);
     resetForm();
   };
@@ -808,7 +1001,6 @@ export default function Home() {
     setDetailMode("create");
     setSelectedEventID(null);
     resetForm();
-    setInviteCodes([]);
     setCheckouts([]);
     setDetailTab("info");
     setDetailRender(true);
@@ -849,14 +1041,88 @@ export default function Home() {
 
   const renderGeneralInfoForm = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label
+        className={`text-sm ${eventSource === "custom" ? "col-span-2" : ""}`}
+      >
+        <span className="block mb-1 font-medium">
+          Event source <span className="text-rose-600">*</span>
+        </span>
+        <select
+          className={`border rounded-lg px-3 py-2 w-full ${
+            eventFormErrors.eventSource ? "border-rose-500" : ""
+          }`}
+          value={eventSource}
+          onChange={(e) => {
+            const nextSource = e.target.value as "luma" | "custom";
+            setEventSource(nextSource);
+            if (nextSource !== "luma") {
+              setImportedLumaImageURL("");
+              clearEventFormError("eventImageUrl");
+            }
+            clearEventFormError("eventSource");
+            clearEventFormError("sourceUrl");
+          }}
+        >
+          <option value="custom">Custom</option>
+          <option value="luma">Luma.com</option>
+        </select>
+        {eventFormErrors.eventSource && (
+          <p className="mt-1 text-xs text-rose-600">
+            {eventFormErrors.eventSource}
+          </p>
+        )}
+      </label>
+      {eventSource === "luma" && (
+        <label className="text-sm">
+          <span className="block mb-1 font-medium">
+            Luma event URL <span className="text-rose-600">*</span>
+          </span>
+          <div className="flex gap-2">
+            <input
+              className={`border rounded-lg px-3 py-2 w-full disabled:bg-slate-100 ${
+                eventFormErrors.sourceUrl ? "border-rose-500" : ""
+              }`}
+              value={sourceUrl}
+              onChange={(e) => {
+                setSourceURL(e.target.value);
+                clearEventFormError("sourceUrl");
+              }}
+              placeholder="https://lu.ma/..."
+            />
+            <button
+              onClick={importLumaEvent}
+              disabled={importingLuma}
+              className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-60"
+            >
+              {importingLuma ? "..." : "Import"}
+            </button>
+          </div>
+          {eventFormErrors.sourceUrl && (
+            <p className="mt-1 text-xs text-rose-600">
+              {eventFormErrors.sourceUrl}
+            </p>
+          )}
+        </label>
+      )}
+
       <label className="text-sm">
-        <span className="block mb-1 font-medium">Event title</span>
+        <span className="block mb-1 font-medium">
+          Event title <span className="text-rose-600">*</span>
+        </span>
         <input
-          className="border rounded-lg px-3 py-2 w-full"
+          className={`border rounded-lg px-3 py-2 w-full ${
+            eventFormErrors.title ? "border-rose-500" : ""
+          }`}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            clearEventFormError("title");
+          }}
           required
         />
+        {eventFormErrors.title && (
+          <p className="mt-1 text-xs text-rose-600">{eventFormErrors.title}</p>
+        )}
       </label>
       <label className="text-sm">
         <span className="block mb-1 font-medium">Organizer name</span>
@@ -869,28 +1135,111 @@ export default function Home() {
 
       <label className="text-sm md:col-span-2">
         <span className="block mb-1 font-medium">Brief event description</span>
-        <textarea
-          className="border rounded-lg px-3 py-2 w-full min-h-24 resize-y"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        <div className="rounded-lg border border-slate-300 bg-white">
+          <div className="flex flex-wrap gap-1 border-b border-slate-200 px-2 py-1.5">
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={() => applyDescriptionCommand("bold")}
+            >
+              Bold
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={() => applyDescriptionCommand("italic")}
+            >
+              Italic
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={() => applyDescriptionCommand("insertUnorderedList")}
+            >
+              Bullet
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={() => applyDescriptionCommand("insertOrderedList")}
+            >
+              Numbered
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={() => applyDescriptionCommand("createLink")}
+            >
+              Link
+            </button>
+          </div>
+          <div
+            ref={descriptionEditorRef}
+            contentEditable
+            suppressContentEditableWarning
+            className="min-h-36 w-full px-3 py-2 text-sm outline-none [&_a]:text-blue-600 [&_a]:underline [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_strong]:font-semibold [&_ul]:ml-5 [&_ul]:list-disc"
+            onInput={(e) =>
+              setDescription(
+                sanitizeRichHtml((e.currentTarget as HTMLDivElement).innerHTML),
+              )
+            }
+          />
+        </div>
       </label>
 
       <div className="text-sm md:col-span-2">
         <span className="block mb-1 font-medium">
           Event image (square crop, JPG/PNG/WEBP, max 2MB)
         </span>
-        <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
-          <Upload {...uploadProps}>
-            {imageFileList.length === 0 && <div>Upload</div>}
-          </Upload>
-        </ImgCrop>
+        <div ref={uploadTriggerRef} className="relative z-0 overflow-hidden">
+          <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
+            {isMobile ? (
+              <Upload {...uploadProps} showUploadList={false}>
+                <div className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-sm">
+                  Tap to upload event image
+                </div>
+              </Upload>
+            ) : (
+              <Upload.Dragger
+                {...uploadProps}
+                multiple={false}
+                showUploadList={false}
+                className="!w-full !min-h-[132px] !p-3"
+              >
+                <p className="text-sm font-medium">
+                  Drag & drop event image here, or click to upload
+                </p>
+                <p className="text-xs text-slate-500">
+                  Only 1 image. Crop is required before upload.
+                </p>
+              </Upload.Dragger>
+            )}
+          </ImgCrop>
+        </div>
+        {importedLumaImageURL && (
+          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
+            <p className="text-xs text-amber-700">
+              Imported Luma image detected. Upload and crop one image before
+              saving.
+            </p>
+            <img
+              src={importedLumaImageURL}
+              alt="Imported Luma event"
+              className="mt-2 h-20 w-20 rounded border object-cover"
+            />
+          </div>
+        )}
         {eventImageUrl && (
           <img
             src={eventImageUrl}
             alt="Event preview"
             className="mt-2 h-28 w-28 rounded-lg border object-cover"
           />
+        )}
+        {eventFormErrors.eventImageUrl && (
+          <p className="mt-1 text-xs text-rose-600">
+            {eventFormErrors.eventImageUrl}
+          </p>
         )}
       </div>
 
@@ -904,44 +1253,33 @@ export default function Home() {
         />
       </label>
       <label className="text-sm">
+        <span className="block mb-1 font-medium">
+          Checkout expires at <span className="text-rose-600">*</span>
+        </span>
+        <input
+          className={`border rounded-lg px-3 py-2 w-full ${
+            eventFormErrors.checkoutExpiresAt ? "border-rose-500" : ""
+          }`}
+          type="datetime-local"
+          value={checkoutExpiresAt}
+          onChange={(e) => {
+            setCheckoutExpiresAt(e.target.value);
+            clearEventFormError("checkoutExpiresAt");
+          }}
+        />
+        {eventFormErrors.checkoutExpiresAt && (
+          <p className="mt-1 text-xs text-rose-600">
+            {eventFormErrors.checkoutExpiresAt}
+          </p>
+        )}
+      </label>
+      <label className="text-sm md:col-span-2">
         <span className="block mb-1 font-medium">Location link</span>
         <input
           className="border rounded-lg px-3 py-2 w-full"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
         />
-      </label>
-      <label className="text-sm md:col-span-2">
-        <span className="block mb-1 font-medium">Merchant wallet address</span>
-        <input
-          className="border rounded-lg px-3 py-2 w-full font-mono text-xs"
-          value={merchantWallet}
-          onChange={(e) => setMerchantWallet(e.target.value)}
-          required
-        />
-      </label>
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">USDC amount</span>
-        <input
-          className="border rounded-lg px-3 py-2 w-full"
-          type="number"
-          min="1"
-          step="1"
-          value={amountUsdc}
-          onChange={(e) => setAmountUsdc(e.target.value)}
-          required
-        />
-      </label>
-      <label className="text-sm">
-        <span className="block mb-1 font-medium">Network</span>
-        <select
-          className="border rounded-lg px-3 py-2 w-full"
-          value={network}
-          onChange={(e) => setNetwork(e.target.value)}
-        >
-          <option value="devnet">Devnet</option>
-          <option value="mainnet">Mainnet</option>
-        </select>
       </label>
       {detailMode === "edit" && selectedEvent && (
         <div className="md:col-span-2 rounded-lg border bg-slate-50 p-3">
@@ -968,97 +1306,176 @@ export default function Home() {
     </div>
   );
 
-  const renderInviteList = () => (
+  const renderCheckoutFormSection = () => (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          <span className="mb-1 block">Search Invite</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label className="text-sm md:col-span-2">
+          <span className="block mb-1 font-medium">
+            Merchant wallet address <span className="text-rose-600">*</span>
+          </span>
           <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Search code..."
-            value={inviteSearchTerm}
-            onChange={(e) => setInviteSearchTerm(e.target.value)}
+            className={`border rounded-lg px-3 py-2 w-full font-mono text-xs ${
+              eventFormErrors.merchantWallet ? "border-rose-500" : ""
+            }`}
+            value={merchantWallet}
+            onChange={(e) => {
+              setMerchantWallet(e.target.value);
+              clearEventFormError("merchantWallet");
+            }}
+            required
           />
+          {eventFormErrors.merchantWallet && (
+            <p className="mt-1 text-xs text-rose-600">
+              {eventFormErrors.merchantWallet}
+            </p>
+          )}
         </label>
         <label className="text-sm">
-          <span className="mb-1 block">Generate Count</span>
+          <span className="block mb-1 font-medium">
+            USDC amount <span className="text-rose-600">*</span>
+          </span>
           <input
-            className="border rounded-lg px-3 py-2 w-28"
+            className={`border rounded-lg px-3 py-2 w-full ${
+              eventFormErrors.amountUsdc ? "border-rose-500" : ""
+            }`}
             type="number"
-            value={newCodeCount}
             min="1"
-            max="500"
-            onChange={(e) => setNewCodeCount(e.target.value)}
+            step="1"
+            value={amountUsdc}
+            onChange={(e) => {
+              setAmountUsdc(e.target.value);
+              clearEventFormError("amountUsdc");
+            }}
+            required
           />
+          {eventFormErrors.amountUsdc && (
+            <p className="mt-1 text-xs text-rose-600">
+              {eventFormErrors.amountUsdc}
+            </p>
+          )}
         </label>
-        <button
-          onClick={generateCodes}
-          disabled={detailMode === "create"}
-          className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-50"
-        >
-          Generate
-        </button>
       </div>
 
-      {detailMode === "create" ? (
-        <p className="text-xs text-slate-500">
-          Save event first to manage invite codes.
-        </p>
-      ) : (
-        <>
-          <div className="text-xs text-slate-500">
-            Showing{" "}
-            {filteredInvites.length === 0 ? 0 : (invitePage - 1) * 10 + 1}-
-            {Math.min(invitePage * 10, filteredInvites.length)} of{" "}
-            {filteredInvites.length} invite codes
-          </div>
-          <div className="rounded-lg border bg-slate-50 p-2 max-h-72 overflow-auto">
-            {pagedInvites.length === 0 ? (
-              <p className="text-sm text-slate-500">No invite codes found.</p>
-            ) : (
-              <ul className="space-y-1 font-mono text-xs">
-                {pagedInvites.map((code, idx) => (
-                  <li
-                    key={`${code}-${idx}`}
-                    className="flex items-center justify-between border rounded-lg bg-white border-slate-200 px-2 py-1.5"
-                  >
-                    <span>{code}</span>
-                    <button
-                      onClick={() => copyText(code)}
-                      className="rounded border px-2 py-0.5 text-[11px]"
-                    >
-                      Copy
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div
-            className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+        <p className="text-sm font-medium">Participant Info Form Fields</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            <span className="mb-1 block">Search field</span>
+            <input
+              className="border rounded-lg px-3 py-2"
+              placeholder="Search field..."
+              value={checkoutFormSearchTerm}
+              onChange={(e) => setCheckoutFormSearchTerm(e.target.value)}
+            />
+          </label>
+          <button
+            onClick={addParticipantField}
+            className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm"
           >
-            <button
-              disabled={invitePage <= 1}
-              onClick={() => setInvitePage((p) => Math.max(1, p - 1))}
-              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
-            >
-              Prev
-            </button>
-            <span className="text-xs text-slate-600">
-              Page {invitePage} / {inviteTotalPages}
-            </span>
-            <button
-              disabled={invitePage >= inviteTotalPages}
-              onClick={() =>
-                setInvitePage((p) => Math.min(inviteTotalPages, p + 1))
-              }
-              className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        </>
-      )}
+            Add field
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-500">
+          Showing{" "}
+          {filteredCheckoutFields.length === 0
+            ? 0
+            : (checkoutFormPage - 1) * 10 + 1}
+          -{Math.min(checkoutFormPage * 10, filteredCheckoutFields.length)} of{" "}
+          {filteredCheckoutFields.length} fields
+        </div>
+        <div className="rounded-lg border bg-white p-2 max-h-72 overflow-auto">
+          {pagedCheckoutFields.length === 0 ? (
+            <p className="text-sm text-slate-500">No fields found.</p>
+          ) : (
+            <div className="space-y-2">
+              {pagedCheckoutFields.map((field) => {
+                const absoluteIndex = participantFields.findIndex(
+                  (v) => v === field,
+                );
+                const fixed =
+                  field.field_name === "name" || field.field_name === "email";
+                return (
+                  <div
+                    key={`field-${absoluteIndex}`}
+                    className="grid grid-cols-1 md:grid-cols-[1fr_88px_76px] gap-2 border rounded-lg bg-white border-slate-200 p-2"
+                  >
+                    <input
+                      className="border rounded px-2 py-1.5 text-xs"
+                      value={field.field_name}
+                      disabled={fixed}
+                      onChange={(e) =>
+                        setParticipantFields((prev) =>
+                          prev.map((v, i) =>
+                            i === absoluteIndex
+                              ? {
+                                  ...v,
+                                  field_name: e.target.value,
+                                }
+                              : v,
+                          ),
+                        )
+                      }
+                    />
+                    <label className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs">
+                      <input
+                        type="checkbox"
+                        disabled={fixed}
+                        checked={field.required}
+                        onChange={(e) =>
+                          setParticipantFields((prev) =>
+                            prev.map((v, i) =>
+                              i === absoluteIndex
+                                ? { ...v, required: e.target.checked }
+                                : v,
+                            ),
+                          )
+                        }
+                      />
+                      Required
+                    </label>
+                    <button
+                      onClick={() => {
+                        if (fixed) return;
+                        setParticipantFields((prev) =>
+                          prev.filter((_, i) => i !== absoluteIndex),
+                        );
+                      }}
+                      disabled={fixed}
+                      className="rounded border px-2 py-1 text-xs disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+      >
+        <button
+          disabled={checkoutFormPage <= 1}
+          onClick={() => setCheckoutFormPage((p) => Math.max(1, p - 1))}
+          className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+        >
+          Prev
+        </button>
+        <span className="text-xs text-slate-600">
+          Page {checkoutFormPage} / {checkoutFormTotalPages}
+        </span>
+        <button
+          disabled={checkoutFormPage >= checkoutFormTotalPages}
+          onClick={() =>
+            setCheckoutFormPage((p) => Math.min(checkoutFormTotalPages, p + 1))
+          }
+          className="rounded-lg border px-2.5 py-1 text-xs disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 
@@ -1069,7 +1486,7 @@ export default function Home() {
           <span className="mb-1 block">Search Deposit</span>
           <input
             className="border rounded-lg px-3 py-2"
-            placeholder="Invite, wallet, reference, status..."
+            placeholder="Wallet, reference, status..."
             value={depositSearchTerm}
             onChange={(e) => setDepositSearchTerm(e.target.value)}
           />
@@ -1102,51 +1519,76 @@ export default function Home() {
             <table className="min-w-full text-xs">
               <thead className="bg-slate-50">
                 <tr className="text-left">
-                  <th className="px-2 py-2">Invite</th>
+                  {participantFields
+                    .filter((f) => f.required)
+                    .map((field) => (
+                      <th
+                        key={`required-${field.field_name}`}
+                        className="px-2 py-2"
+                      >
+                        {field.field_name}
+                      </th>
+                    ))}
+                  <th className="px-2 py-2">Additional info</th>
                   <th className="px-2 py-2">Wallet</th>
                   <th className="px-2 py-2">Status</th>
-                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2">Transaction</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedDeposits.map((row) => (
                   <tr key={row.id} className="border-t align-top">
-                    <td className="px-2 py-2 font-mono">{row.inviteCode}</td>
+                    {participantFields
+                      .filter((f) => f.required)
+                      .map((field) => (
+                        <td
+                          key={`required-${row.id}-${field.field_name}`}
+                          className="px-2 py-2"
+                        >
+                          {row.participantData?.[field.field_name] ?? "-"}
+                        </td>
+                      ))}
+                    <td className="px-2 py-2 max-w-[220px]">
+                      {(() => {
+                        const required = new Set(
+                          participantFields
+                            .filter((f) => f.required)
+                            .map((f) => f.field_name),
+                        );
+                        const extras = Object.entries(row.participantData || {})
+                          .filter(
+                            ([k, v]) =>
+                              !required.has(k) && String(v ?? "").trim() !== "",
+                          )
+                          .map(([k, v]) => `${k}: ${String(v)}`);
+                        if (extras.length === 0) return "-";
+                        return (
+                          <div className="space-y-1">
+                            {extras.map((line) => (
+                              <div
+                                key={`${row.id}-${line}`}
+                                className="break-words"
+                              >
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-2 py-2 font-mono max-w-[140px] break-all">
                       {row.walletAddress}
                     </td>
                     <td className="px-2 py-2">
                       <div>{row.status}</div>
-                      {row.status === "rejected" && row.notes && (
-                        <div className="text-red-600">{row.notes}</div>
-                      )}
                     </td>
                     <td className="px-2 py-2">
-                      {(row.status === "paid" || row.status === "approved") && (
-                        <div className="flex flex-col gap-1">
-                          <button
-                            onClick={() => approveCheckout(row.id)}
-                            disabled={
-                              approvingID === row.id ||
-                              row.status === "approved"
-                            }
-                            className="rounded bg-emerald-600 text-white px-2 py-1 disabled:opacity-50"
-                          >
-                            {approvingID === row.id ? "..." : "Approve"}
-                          </button>
-                          <button
-                            onClick={() => rejectCheckout(row.id)}
-                            disabled={rejectingID === row.id}
-                            className="rounded bg-red-600 text-white px-2 py-1 disabled:opacity-50"
-                          >
-                            {rejectingID === row.id ? "..." : "Reject"}
-                          </button>
-                        </div>
-                      )}
                       {row.signature && (
                         <a
                           href={
-                            selectedEvent?.network === "mainnet"
+                            (process.env.NEXT_PUBLIC_USDC_MINT ||
+                              "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU") !==
+                            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
                               ? `https://solscan.io/tx/${row.signature}`
                               : `https://solscan.io/tx/${row.signature}?cluster=devnet`
                           }
@@ -1208,7 +1650,19 @@ export default function Home() {
       <main className="min-h-screen bg-slate-50 text-slate-900">
         <div className="mx-auto max-w-lg px-4 py-14">
           <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-4">
-            <h1 className="text-2xl font-bold">Login / Register</h1>
+            <div className="flex items-center gap-3">
+              <Image
+                src="/payknot_nontext.svg"
+                alt="Payknot"
+                width={36}
+                height={36}
+                className="h-9 w-9"
+              />
+              <div>
+                <h1 className="text-2xl font-bold">Login / Register</h1>
+                <p className="text-xs text-slate-500">Payknot</p>
+              </div>
+            </div>
             <p className="text-sm text-slate-600">
               Login required to access event checkout management.
             </p>
@@ -1295,13 +1749,22 @@ export default function Home() {
           className={`sticky top-0 z-30 rounded-2xl bg-white/95 backdrop-blur border border-slate-200 shadow-sm p-3 md:p-6 transition-transform duration-300 ${!isMobile && sessionsHeaderPinned ? "-translate-y-[105%]" : "translate-y-0"}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl md:text-3xl font-bold tracking-tight">
-                Payknot
-              </h1>
-              <p className="mt-1 text-slate-600 text-xs md:text-sm">
-                Signed in as {currentUser.name} ({currentUser.email})
-              </p>
+            <div className="flex items-center gap-3">
+              <Image
+                src="/payknot_nontext.svg"
+                alt="Payknot"
+                width={42}
+                height={42}
+                className="h-9 w-9 md:h-10 md:w-10"
+              />
+              <div>
+                <h1 className="text-xl md:text-3xl font-bold tracking-tight">
+                  Payknot
+                </h1>
+                <p className="mt-1 text-slate-600 text-xs md:text-sm">
+                  Signed in as {currentUser.name} ({currentUser.email})
+                </p>
+              </div>
             </div>
             <button
               onClick={logout}
@@ -1595,7 +2058,7 @@ export default function Home() {
                 </div>
 
                 <div className="px-4 py-2 border-b border-slate-200 flex gap-2">
-                  {(["info", "invites", "deposits"] as DetailTab[]).map(
+                  {(["info", "checkoutForm", "deposits"] as DetailTab[]).map(
                     (tab) => (
                       <button
                         key={tab}
@@ -1604,8 +2067,8 @@ export default function Home() {
                       >
                         {tab === "info"
                           ? "General Info"
-                          : tab === "invites"
-                            ? "Invites"
+                          : tab === "checkoutForm"
+                            ? "Checkout Form"
                             : "Deposits"}
                       </button>
                     ),
@@ -1615,16 +2078,16 @@ export default function Home() {
                 <div className="flex-1 overflow-y-auto px-4 py-4 pb-28 space-y-4">
                   {detailTab === "info" && renderGeneralInfoForm()}
 
-                  {detailTab === "invites" && (
+                  {detailTab === "checkoutForm" && (
                     <section className="rounded-lg border border-slate-200">
                       <button
                         className="w-full px-3 py-2 text-left text-sm font-medium border-b bg-slate-50"
-                        onClick={() => setInviteAccordionOpen((v) => !v)}
+                        onClick={() => setCheckoutFormAccordionOpen((v) => !v)}
                       >
-                        Invite Codes {inviteAccordionOpen ? "▾" : "▸"}
+                        Checkout Form {checkoutFormAccordionOpen ? "▾" : "▸"}
                       </button>
-                      {inviteAccordionOpen && (
-                        <div className="p-3">{renderInviteList()}</div>
+                      {checkoutFormAccordionOpen && (
+                        <div className="p-3">{renderCheckoutFormSection()}</div>
                       )}
                     </section>
                   )}
@@ -1645,11 +2108,17 @@ export default function Home() {
                 </div>
 
                 <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 py-3">
+                  {detailMode === "edit" && hasPaidDeposits && (
+                    <p className="mb-2 text-xs text-amber-700">
+                      This event already has successful deposits. Edit/Delete is
+                      disabled.
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     {detailMode === "edit" && (
                       <button
                         onClick={deleteEvent}
-                        disabled={deleting || !selectedEvent}
+                        disabled={deleting || !selectedEvent || hasPaidDeposits}
                         className="rounded-lg bg-red-600 text-white px-3 py-2 text-sm disabled:opacity-60"
                       >
                         {deleting ? "Deleting..." : "Delete"}
@@ -1657,7 +2126,11 @@ export default function Home() {
                     )}
                     <button
                       onClick={saveEventChanges}
-                      disabled={creating || updating}
+                      disabled={
+                        creating ||
+                        updating ||
+                        (detailMode === "edit" && hasPaidDeposits)
+                      }
                       className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
                     >
                       {detailMode === "create"
@@ -1705,16 +2178,16 @@ export default function Home() {
                   <section className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-slate-700">
-                        Invite Codes
+                        Checkout Form
                       </h4>
                       <button
-                        onClick={() => setShowInvitesSection((v) => !v)}
+                        onClick={() => setShowCheckoutFormSection((v) => !v)}
                         className="text-xs rounded-lg border px-2 py-1"
                       >
-                        {showInvitesSection ? "Hide" : "View All"}
+                        {showCheckoutFormSection ? "Hide" : "View All"}
                       </button>
                     </div>
-                    {showInvitesSection && renderInviteList()}
+                    {showCheckoutFormSection && renderCheckoutFormSection()}
                   </section>
 
                   <section className="space-y-3">
@@ -1734,11 +2207,17 @@ export default function Home() {
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-5 py-3">
+                  {detailMode === "edit" && hasPaidDeposits && (
+                    <p className="mb-2 text-xs text-amber-700">
+                      This event already has successful deposits. Edit/Delete is
+                      disabled.
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     {detailMode === "edit" && (
                       <button
                         onClick={deleteEvent}
-                        disabled={deleting || !selectedEvent}
+                        disabled={deleting || !selectedEvent || hasPaidDeposits}
                         className="rounded-lg bg-red-600 text-white px-3 py-2 text-sm disabled:opacity-60"
                       >
                         {deleting ? "Deleting..." : "Delete"}
@@ -1746,7 +2225,11 @@ export default function Home() {
                     )}
                     <button
                       onClick={saveEventChanges}
-                      disabled={creating || updating}
+                      disabled={
+                        creating ||
+                        updating ||
+                        (detailMode === "edit" && hasPaidDeposits)
+                      }
                       className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
                     >
                       {detailMode === "create"

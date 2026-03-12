@@ -4,12 +4,12 @@ A full-stack event deposit management product on Solana.
 
 ## What It Does
 - Hosts create event checkout sessions.
-- Hosts generate invite codes and share checkout links.
-- Participants validate invite codes, pay USDC, and submit tx proof.
-- Hosts approve or reject deposits with reason.
+- Hosts can import event info from public Luma URLs or enter details manually.
+- Hosts define participant input fields and available payment methods (wallet / QR).
+- Participants submit their info, pay USDC, and see transaction receipt status.
 
 ## Current Architecture
-- Frontend: Next.js 14 + Tailwind + Wallet Adapter + Antd upload/crop
+- Frontend: Next.js 14 + Tailwind + Wallet Adapter + AntD
 - Backend: Go (net/http) + PostgreSQL + Redis
 - Blockchain: Solana RPC verification (Go SDK)
 - Auth: Backend session auth (JWT in HttpOnly cookie + DB-backed session rows)
@@ -66,6 +66,7 @@ Apply all migrations in order, including:
 - `000007_add_event_owner_fields`
 - `000008_add_rejected_checkout_status`
 - `000009_add_auth_tables`
+- `000010_checkout_form_and_source`
 
 ## Project Docs (Must-Have)
 - [Product Spec](./PRODUCT_SPEC.md)

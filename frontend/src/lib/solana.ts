@@ -6,9 +6,10 @@ import {
 } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
   getAccount,
   createTransferInstruction,
-  createAssociatedTokenAccountInstruction,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 
 // ----------------------------------------------------------------------
@@ -60,35 +61,28 @@ export async function getUsdcBalance(
  * @returns
  */
 export async function createUsdcTransfer(
-  connection: Connection,
+  _connection: Connection,
   publicKey: PublicKey,
   recipient: PublicKey,
   amount: number,
   memo: string,
 ): Promise<Transaction> {
-  const senderAta = await getAssociatedTokenAddress(
-    USDC_MINT_ADDRESS,
-    publicKey,
-  );
-  const recipientAta = await getAssociatedTokenAddress(
+  const senderAta = getAssociatedTokenAddressSync(USDC_MINT_ADDRESS, publicKey);
+  const recipientAta = getAssociatedTokenAddressSync(
     USDC_MINT_ADDRESS,
     recipient,
   );
 
+  // Atomic ATA readiness: no preflight ATA check, always include idempotent create.
+  // If ATA exists, instruction is a no-op; if missing, sender funds rent in same tx.
   const transaction = new Transaction();
-  const recipientAccountInfo = await connection.getAccountInfo(recipientAta);
-  if (!recipientAccountInfo) {
-    transaction.add(
-      createAssociatedTokenAccountInstruction(
-        publicKey,
-        recipientAta,
-        recipient,
-        USDC_MINT_ADDRESS,
-      ),
-    );
-  }
-
   transaction.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      publicKey,
+      recipientAta,
+      recipient,
+      USDC_MINT_ADDRESS,
+    ),
     createTransferInstruction(
       senderAta,
       recipientAta,
@@ -98,10 +92,8 @@ export async function createUsdcTransfer(
     new TransactionInstruction({
       keys: [{ pubkey: publicKey, isSigner: true, isWritable: true }],
       data: Buffer.from(memo, "utf-8"),
-      // Using Memo v1 ID instead of v2
       programId: new PublicKey("Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo"),
     }),
   );
-
   return transaction;
 }

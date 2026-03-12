@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"solana_paywall/backend/database"
 	"solana_paywall/backend/enum"
 	"solana_paywall/backend/watcher"
@@ -15,39 +16,33 @@ import (
 )
 
 type CheckoutEventResponse struct {
-	Slug           string `json:"slug"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	EventImageURL  string `json:"eventImageUrl"`
-	EventDate      string `json:"eventDate"`
-	Location       string `json:"location"`
-	OrganizerName  string `json:"organizerName"`
-	MerchantWallet string `json:"merchantWallet"`
-	AmountUSDC     string `json:"amountUsdc"`
-	AmountRaw      int64  `json:"amountRaw"`
-	Network        string `json:"network"`
-}
-
-type ValidateInviteRequest struct {
-	Slug string `json:"slug"`
-	Code string `json:"code"`
-}
-
-type InviteStatusResponse struct {
-	Valid   bool                    `json:"valid"`
-	Reason  string                  `json:"reason"`
-	Receipt *CheckoutStatusResponse `json:"receipt,omitempty"`
+	Slug                string             `json:"slug"`
+	Title               string             `json:"title"`
+	Description         string             `json:"description"`
+	EventImageURL       string             `json:"eventImageUrl"`
+	EventDate           string             `json:"eventDate"`
+	Location            string             `json:"location"`
+	OrganizerName       string             `json:"organizerName"`
+	MerchantWallet      string             `json:"merchantWallet"`
+	AmountUSDC          string             `json:"amountUsdc"`
+	AmountRaw           int64              `json:"amountRaw"`
+	Network             string             `json:"network"`
+	ParticipantForm     []ParticipantField `json:"participantForm"`
+	PaymentMethodWallet bool               `json:"paymentMethodWallet"`
+	PaymentMethodQR     bool               `json:"paymentMethodQr"`
 }
 
 type CreateCheckoutInvoiceRequest struct {
-	Slug          string `json:"slug"`
-	InviteCode    string `json:"inviteCode"`
-	WalletAddress string `json:"walletAddress"`
+	Slug            string                 `json:"slug"`
+	WalletAddress   string                 `json:"walletAddress"`
+	ParticipantData map[string]interface{} `json:"participantData"`
+	PaymentMethod   string                 `json:"paymentMethod"`
 }
 
 type CreateCheckoutInvoiceResponse struct {
 	Reference string `json:"reference"`
 	AmountRaw int64  `json:"amountRaw"`
+	Network   string `json:"network"`
 }
 
 type ConfirmCheckoutRequest struct {
@@ -65,21 +60,29 @@ type CancelCheckoutRequest struct {
 }
 
 type ManualVerifyRequest struct {
-	Slug          string `json:"slug"`
-	InviteCode    string `json:"inviteCode"`
-	WalletAddress string `json:"walletAddress"`
-	Signature     string `json:"signature"`
+	Slug          string                 `json:"slug"`
+	WalletAddress string                 `json:"walletAddress"`
+	Signature     string                 `json:"signature"`
+	Participant   map[string]interface{} `json:"participantData"`
+}
+
+type ParticipantStatusRequest struct {
+	Slug            string                 `json:"slug"`
+	ParticipantData map[string]interface{} `json:"participantData"`
 }
 
 type CheckoutStatusResponse struct {
-	Reference  string `json:"reference"`
-	Status     string `json:"status"`
-	Signature  string `json:"signature"`
-	Network    string `json:"network"`
-	SolscanURL string `json:"solscanUrl"`
-	ApprovedBy string `json:"approvedBy"`
-	ApprovedAt string `json:"approvedAt"`
-	Reason     string `json:"reason"`
+	Reference       string                 `json:"reference"`
+	Status          string                 `json:"status"`
+	Signature       string                 `json:"signature"`
+	Network         string                 `json:"network"`
+	SolscanURL      string                 `json:"solscanUrl"`
+	PaymentMethod   string                 `json:"paymentMethod"`
+	ParticipantData map[string]interface{} `json:"participantData,omitempty"`
+}
+
+type DetectCheckoutRequest struct {
+	Reference string `json:"reference"`
 }
 
 // GET /api/checkout/{slug}
@@ -97,11 +100,14 @@ func GetCheckoutBySlug(w http.ResponseWriter, r *http.Request) {
 
 	var resp CheckoutEventResponse
 	var eventDate *time.Time
+	var formJSON []byte
+	var methodsJSON []byte
 	err := database.DB.QueryRow(`
-		SELECT slug, title, description, event_image_url, event_date, location, organizer_name, merchant_wallet, amount_usdc, network
+		SELECT slug, title, description, event_image_url, event_date, location, organizer_name, merchant_wallet, amount_usdc,
+		       participant_form_schema, payment_methods
 		FROM events
-		WHERE slug = $1 AND status = 'active'
-	`, slug).Scan(&resp.Slug, &resp.Title, &resp.Description, &resp.EventImageURL, &eventDate, &resp.Location, &resp.OrganizerName, &resp.MerchantWallet, &resp.AmountRaw, &resp.Network)
+		WHERE slug = $1 AND status = 'active' AND checkout_expires_at > NOW()
+	`, slug).Scan(&resp.Slug, &resp.Title, &resp.Description, &resp.EventImageURL, &eventDate, &resp.Location, &resp.OrganizerName, &resp.MerchantWallet, &resp.AmountRaw, &formJSON, &methodsJSON)
 	if err != nil {
 		http.Error(w, "event not found", http.StatusNotFound)
 		return
@@ -110,74 +116,14 @@ func GetCheckoutBySlug(w http.ResponseWriter, r *http.Request) {
 		resp.EventDate = eventDate.Format(time.RFC3339)
 	}
 	resp.AmountUSDC = fmt.Sprintf("%.2f", float64(resp.AmountRaw)/1_000_000)
+	resp.Network = networkFromMint()
+	resp.ParticipantForm = decodeParticipantFields(formJSON)
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
+	methods := map[string]bool{"wallet": true, "qr": true}
+	_ = json.Unmarshal(methodsJSON, &methods)
+	resp.PaymentMethodWallet = methods["wallet"]
+	resp.PaymentMethodQR = methods["qr"]
 
-// POST /api/invite/validate
-func ValidateInviteCode(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req ValidateInviteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	req.Slug = strings.TrimSpace(req.Slug)
-	req.Code = strings.ToUpper(strings.TrimSpace(req.Code))
-	if req.Slug == "" || req.Code == "" {
-		http.Error(w, "slug and code are required", http.StatusBadRequest)
-		return
-	}
-
-	valid, reason, err := isInviteCodeUsable(req.Slug, req.Code)
-	if err != nil {
-		http.Error(w, "Failed to validate invite code", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"valid":  valid,
-		"reason": reason,
-	})
-}
-
-// POST /api/invite/status
-// Returns usability + existing receipt (if any) for this invite code.
-func GetInviteStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req ValidateInviteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	req.Slug = strings.TrimSpace(req.Slug)
-	req.Code = strings.ToUpper(strings.TrimSpace(req.Code))
-	if req.Slug == "" || req.Code == "" {
-		http.Error(w, "slug and code are required", http.StatusBadRequest)
-		return
-	}
-
-	valid, reason, err := isInviteCodeUsable(req.Slug, req.Code)
-	if err != nil {
-		http.Error(w, "Failed to get invite status", http.StatusInternalServerError)
-		return
-	}
-
-	receipt, _ := latestReceiptByInviteCode(req.Slug, req.Code)
-	resp := InviteStatusResponse{
-		Valid:   valid,
-		Reason:  reason,
-		Receipt: receipt,
-	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -194,43 +140,70 @@ func CreateCheckoutInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Slug = strings.TrimSpace(req.Slug)
-	req.InviteCode = strings.ToUpper(strings.TrimSpace(req.InviteCode))
-	if req.Slug == "" || req.InviteCode == "" || !isValidWalletAddress(req.WalletAddress) {
-		http.Error(w, "slug, inviteCode and walletAddress are required", http.StatusBadRequest)
+	req.PaymentMethod = strings.TrimSpace(req.PaymentMethod)
+	req.WalletAddress = strings.TrimSpace(req.WalletAddress)
+	if req.Slug == "" {
+		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
 
-	valid, reason, err := isInviteCodeUsable(req.Slug, req.InviteCode)
-	if err != nil {
-		http.Error(w, "Failed to validate invite code", http.StatusInternalServerError)
-		return
-	}
-	if !valid {
-		http.Error(w, reason, http.StatusBadRequest)
-		return
-	}
-
-	var eventID, inviteCodeID int64
+	var eventID int64
 	var amount int64
-	err = database.DB.QueryRow(`
-		SELECT e.id, ic.id, e.amount_usdc
-		FROM events e
-		JOIN invite_codes ic ON ic.event_id = e.id
-		WHERE e.slug = $1 AND ic.code = $2
-	`, req.Slug, req.InviteCode).Scan(&eventID, &inviteCodeID, &amount)
+	var merchantWallet string
+	var formJSON []byte
+	var methodsJSON []byte
+	err := database.DB.QueryRow(`
+		SELECT id, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+		FROM events
+		WHERE slug = $1 AND status = 'active'
+	`, req.Slug).Scan(&eventID, &amount, &merchantWallet, &formJSON, &methodsJSON)
 	if err != nil {
-		http.Error(w, "Event or invite code not found", http.StatusNotFound)
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+
+	fields := decodeParticipantFields(formJSON)
+	if err := validateParticipantData(fields, req.ParticipantData); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := ensureParticipantEmailAvailable(eventID, req.ParticipantData); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	methods := map[string]bool{"wallet": true, "qr": true}
+	_ = json.Unmarshal(methodsJSON, &methods)
+	switch req.PaymentMethod {
+	case "wallet":
+		if !methods["wallet"] {
+			http.Error(w, "wallet method disabled", http.StatusBadRequest)
+			return
+		}
+		if !isValidWalletAddress(req.WalletAddress) {
+			http.Error(w, "walletAddress is required for wallet method", http.StatusBadRequest)
+			return
+		}
+	case "qr":
+		if !methods["qr"] {
+			http.Error(w, "qr method disabled", http.StatusBadRequest)
+			return
+		}
+	default:
+		http.Error(w, "invalid payment method", http.StatusBadRequest)
 		return
 	}
 
 	reference := uuid.NewString()
+	participantJSON, _ := json.Marshal(req.ParticipantData)
 	redisKey := fmt.Sprintf("invoice:%s", reference)
 	invoiceData := map[string]interface{}{
-		"wallet_address": req.WalletAddress,
-		"amount":         amount,
-		"event_id":       eventID,
-		"invite_code_id": inviteCodeID,
-		"invite_code":    req.InviteCode,
+		"wallet_address":   req.WalletAddress,
+		"amount":           amount,
+		"event_id":         eventID,
+		"merchant_wallet":  merchantWallet,
+		"payment_method":   req.PaymentMethod,
+		"participant_data": string(participantJSON),
 	}
 	if err := database.RDB.HSet(database.Ctx, redisKey, invoiceData).Err(); err != nil {
 		http.Error(w, "Failed to create invoice", http.StatusInternalServerError)
@@ -241,29 +214,11 @@ func CreateCheckoutInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = database.DB.Exec(`
-		INSERT INTO invoice (wallet_address, reference, amount, status)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (reference) DO NOTHING
-	`, req.WalletAddress, reference, amount, enum.INVOICE_PENDING)
-	if err != nil {
-		http.Error(w, "Failed to persist invoice", http.StatusInternalServerError)
-		return
-	}
-
-	_, err = database.DB.Exec(`
-		INSERT INTO event_checkouts (event_id, invite_code_id, wallet_address, reference, amount, status)
-		VALUES ($1,$2,$3,$4,$5,'pending_payment')
-	`, eventID, inviteCodeID, req.WalletAddress, reference, amount)
-	if err != nil {
-		http.Error(w, "Failed to create event checkout", http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(CreateCheckoutInvoiceResponse{
 		Reference: reference,
 		AmountRaw: amount,
+		Network:   networkFromMint(),
 	})
 }
 
@@ -319,59 +274,29 @@ func ConfirmCheckoutPayment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid invoice amount", http.StatusInternalServerError)
 		return
 	}
-
-	var merchantWallet string
-	err = database.DB.QueryRow(`
-		SELECT e.merchant_wallet
-		FROM event_checkouts ec
-		JOIN events e ON e.id = ec.event_id
-		WHERE ec.reference = $1
-	`, req.Reference).Scan(&merchantWallet)
-	if err != nil {
-		http.Error(w, "Failed to resolve merchant wallet for checkout", http.StatusInternalServerError)
+	merchantWallet := strings.TrimSpace(invoiceData["merchant_wallet"])
+	if merchantWallet == "" {
+		http.Error(w, "merchant wallet not found", http.StatusInternalServerError)
 		return
 	}
 
-	_, _ = database.DB.Exec(`
-		UPDATE invoice SET signature = $1, status = $2
-		WHERE reference = $3
-	`, req.Signature, enum.INVOICE_PENDING, req.Reference)
-	_, _ = database.DB.Exec(`
-		UPDATE event_checkouts SET signature = $1
-		WHERE reference = $2
-	`, req.Signature, req.Reference)
-
 	if err := watcher.VerifyTransactionForMerchant(req.Reference, req.Signature, amount, merchantWallet); err != nil {
-		_, _ = database.DB.Exec(`UPDATE invoice SET status = $1, err_reason = $2 WHERE reference = $3`, enum.INVOICE_ERROR, truncateErrorMessage(err.Error(), 500), req.Reference)
-		_, _ = database.DB.Exec(`UPDATE event_checkouts SET status = 'failed' WHERE reference = $1`, req.Reference)
+		_, _ = database.DB.Exec(`
+			INSERT INTO invoice (wallet_address, reference, amount, signature, status, err_reason)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (reference) DO UPDATE
+			SET status = EXCLUDED.status,
+			    signature = EXCLUDED.signature,
+			    err_reason = EXCLUDED.err_reason
+		`, strings.TrimSpace(invoiceData["wallet_address"]), req.Reference, amount, req.Signature, enum.INVOICE_ERROR, truncateErrorMessage(err.Error(), 500))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	_, _ = database.DB.Exec(`
-		UPDATE invoice
-		SET status = $1, signature = $2, err_reason = NULL
-		WHERE reference = $3
-	`, enum.INVOICE_PAID, req.Signature, req.Reference)
-
-	_, err = database.DB.Exec(`
-		UPDATE event_checkouts
-		SET status = 'paid', paid_at = NOW(), signature = $1
-		WHERE reference = $2
-	`, req.Signature, req.Reference)
-	if err != nil {
+	if err := finalizePaidCheckout(req.Reference, req.Signature, invoiceData, amount); err != nil {
 		http.Error(w, "Failed to update checkout", http.StatusInternalServerError)
 		return
 	}
-
-	_, _ = database.DB.Exec(`
-		UPDATE invite_codes ic
-		SET used_count = used_count + 1,
-			status = CASE WHEN used_count + 1 >= max_uses THEN 'used' ELSE status END
-		WHERE ic.id = (
-			SELECT invite_code_id FROM event_checkouts WHERE reference = $1
-		)
-	`, req.Reference)
 
 	_ = database.RDB.Del(database.Ctx, redisKey).Err()
 
@@ -398,52 +323,55 @@ func RecheckCheckoutPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var status string
-	var amount int64
-	var signature string
-	var merchantWallet string
-	var inviteCodeID int64
 	err := database.DB.QueryRow(`
-		SELECT ec.status, ec.amount, COALESCE(ec.signature, ''), e.merchant_wallet, ec.invite_code_id
+		SELECT ec.status
 		FROM event_checkouts ec
-		JOIN events e ON e.id = ec.event_id
 		WHERE ec.reference = $1
-	`, req.Reference).Scan(&status, &amount, &signature, &merchantWallet, &inviteCodeID)
-	if err != nil {
-		http.Error(w, "Checkout not found", http.StatusNotFound)
-		return
-	}
-
-	if strings.TrimSpace(req.Signature) != "" {
-		signature = strings.TrimSpace(req.Signature)
-		_, _ = database.DB.Exec(`UPDATE event_checkouts SET signature = $1 WHERE reference = $2`, signature, req.Reference)
-		_, _ = database.DB.Exec(`UPDATE invoice SET signature = $1 WHERE reference = $2`, signature, req.Reference)
-	}
-
-	if status == "approved" || status == "paid" {
+	`, req.Reference).Scan(&status)
+	if err == nil && status == "paid" {
 		resp, _ := getCheckoutStatusByReference(req.Reference)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
+	redisKey := fmt.Sprintf("invoice:%s", req.Reference)
+	invoiceData, _ := database.RDB.HGetAll(database.Ctx, redisKey).Result()
+	if len(invoiceData) == 0 {
+		http.Error(w, "Checkout session expired. Please start a new payment session.", http.StatusNotFound)
+		return
+	}
+
+	amount, parseErr := strconv.ParseInt(invoiceData["amount"], 10, 64)
+	if parseErr != nil {
+		http.Error(w, "Invalid session amount", http.StatusBadRequest)
+		return
+	}
+	merchantWallet := strings.TrimSpace(invoiceData["merchant_wallet"])
+	if merchantWallet == "" {
+		http.Error(w, "merchant wallet not found", http.StatusBadRequest)
+		return
+	}
+
+	signature := strings.TrimSpace(req.Signature)
+	if strings.TrimSpace(req.Signature) != "" {
+		signature = strings.TrimSpace(req.Signature)
+	}
+
 	if signature == "" {
 		http.Error(w, "Missing signature. Submit payment signature to recheck.", http.StatusBadRequest)
 		return
 	}
-
 	if err := watcher.VerifyTransactionForMerchant(req.Reference, signature, amount, merchantWallet); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	_, _ = database.DB.Exec(`UPDATE invoice SET status = $1, signature = $2, err_reason = NULL WHERE reference = $3`, enum.INVOICE_PAID, signature, req.Reference)
-	_, _ = database.DB.Exec(`UPDATE event_checkouts SET status = 'paid', paid_at = NOW(), signature = $1 WHERE reference = $2`, signature, req.Reference)
-	_, _ = database.DB.Exec(`
-		UPDATE invite_codes
-		SET used_count = used_count + 1,
-			status = CASE WHEN used_count + 1 >= max_uses THEN 'used' ELSE status END
-		WHERE id = $1
-	`, inviteCodeID)
+	if err := finalizePaidCheckout(req.Reference, signature, invoiceData, amount); err != nil {
+		http.Error(w, "Failed to finalize checkout", http.StatusInternalServerError)
+		return
+	}
+	_ = database.RDB.Del(database.Ctx, redisKey).Err()
 
 	resp, _ := getCheckoutStatusByReference(req.Reference)
 	w.Header().Set("Content-Type", "application/json")
@@ -462,46 +390,23 @@ func ManualVerifyCheckoutPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Slug = strings.TrimSpace(req.Slug)
-	req.InviteCode = strings.ToUpper(strings.TrimSpace(req.InviteCode))
 	req.WalletAddress = strings.TrimSpace(req.WalletAddress)
 	req.Signature = strings.TrimSpace(req.Signature)
-	var errMessage = ""
-	if req.InviteCode == "" {
-		errMessage += "Invite Code, "
-	}
-	if req.Signature == "" {
-		errMessage += "Signature, "
-	}
-	if !isValidWalletAddress(req.WalletAddress) {
-		errMessage += "Wallet Address "
-	}
-	if errMessage != "" {
-		errMessage += "required"
-		http.Error(w, errMessage, http.StatusBadRequest)
+	if req.Slug == "" || req.Signature == "" || !isValidWalletAddress(req.WalletAddress) {
+		http.Error(w, "slug, walletAddress and signature are required", http.StatusBadRequest)
 		return
 	}
 
-	valid, reason, err := isInviteCodeUsable(req.Slug, req.InviteCode)
-	if err != nil {
-		http.Error(w, "Failed to validate invite code", http.StatusInternalServerError)
-		return
-	}
-	if !valid {
-		http.Error(w, reason, http.StatusBadRequest)
-		return
-	}
-
-	var eventID, inviteCodeID int64
+	var eventID int64
 	var amount int64
-	var merchantWallet, network string
-	err = database.DB.QueryRow(`
-		SELECT e.id, ic.id, e.amount_usdc, e.merchant_wallet, e.network
-		FROM events e
-		JOIN invite_codes ic ON ic.event_id = e.id
-		WHERE e.slug = $1 AND ic.code = $2
-	`, req.Slug, req.InviteCode).Scan(&eventID, &inviteCodeID, &amount, &merchantWallet, &network)
+	var merchantWallet string
+	err := database.DB.QueryRow(`
+		SELECT id, amount_usdc, merchant_wallet
+		FROM events
+		WHERE slug = $1 AND status = 'active'
+	`, req.Slug).Scan(&eventID, &amount, &merchantWallet)
 	if err != nil {
-		http.Error(w, "Event or invite code not found", http.StatusNotFound)
+		http.Error(w, "Event not found", http.StatusNotFound)
 		return
 	}
 
@@ -511,28 +416,135 @@ func ManualVerifyCheckoutPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reference := uuid.NewString()
+	participantJSON, _ := json.Marshal(req.Participant)
 	_, _ = database.DB.Exec(`
 		INSERT INTO invoice (wallet_address, reference, amount, signature, status)
 		VALUES ($1, $2, $3, $4, $5)
 	`, req.WalletAddress, reference, amount, req.Signature, enum.INVOICE_PAID)
 	_, _ = database.DB.Exec(`
-		INSERT INTO event_checkouts (event_id, invite_code_id, wallet_address, reference, signature, amount, status, paid_at)
-		VALUES ($1,$2,$3,$4,$5,$6,'paid',NOW())
-	`, eventID, inviteCodeID, req.WalletAddress, reference, req.Signature, amount)
-	_, _ = database.DB.Exec(`
-		UPDATE invite_codes
-		SET used_count = used_count + 1,
-			status = CASE WHEN used_count + 1 >= max_uses THEN 'used' ELSE status END
-		WHERE id = $1
-	`, inviteCodeID)
+		INSERT INTO event_checkouts (event_id, wallet_address, reference, signature, amount, status, paid_at, participant_data)
+		VALUES ($1,$2,$3,$4,$5,'paid',NOW(),$6::jsonb)
+	`, eventID, req.WalletAddress, reference, req.Signature, amount, string(participantJSON))
 
 	resp := CheckoutStatusResponse{
-		Reference:  reference,
-		Status:     "paid",
-		Signature:  req.Signature,
-		Network:    network,
-		SolscanURL: solscanURLForNetwork(req.Signature, network),
+		Reference:       reference,
+		Status:          "paid",
+		Signature:       req.Signature,
+		Network:         networkFromMint(),
+		SolscanURL:      solscanURLForNetwork(req.Signature, networkFromMint()),
+		ParticipantData: req.Participant,
 	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// POST /api/checkout/participant-status
+func GetParticipantStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ParticipantStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.Slug = strings.TrimSpace(req.Slug)
+	if req.Slug == "" {
+		http.Error(w, "slug is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.ParticipantData) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	payload, _ := json.Marshal(req.ParticipantData)
+	var reference string
+	err := database.DB.QueryRow(`
+		SELECT ec.reference
+		FROM event_checkouts ec
+		JOIN events e ON e.id = ec.event_id
+		WHERE e.slug = $1
+		  AND ec.status = 'paid'
+		  AND ec.participant_data @> $2::jsonb
+		ORDER BY ec.paid_at DESC NULLS LAST, ec.created_at DESC
+		LIMIT 1
+	`, req.Slug, string(payload)).Scan(&reference)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	resp, err := getCheckoutStatusByReference(reference)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// POST /api/checkout/detect
+func DetectCheckoutPayment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req DetectCheckoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.Reference = strings.TrimSpace(req.Reference)
+	if !isValidReference(req.Reference) {
+		http.Error(w, "invalid reference", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := getCheckoutStatusByReference(req.Reference)
+	if err == nil && existing.Status == "paid" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(existing)
+		return
+	}
+
+	redisKey := fmt.Sprintf("invoice:%s", req.Reference)
+	invoiceData, _ := database.RDB.HGetAll(database.Ctx, redisKey).Result()
+	if len(invoiceData) == 0 {
+		http.Error(w, "Checkout session expired. Please start a new payment session.", http.StatusNotFound)
+		return
+	}
+
+	amount, parseErr := strconv.ParseInt(invoiceData["amount"], 10, 64)
+	if parseErr != nil {
+		http.Error(w, "Invalid session amount", http.StatusBadRequest)
+		return
+	}
+	merchantWallet := strings.TrimSpace(invoiceData["merchant_wallet"])
+	if merchantWallet == "" {
+		http.Error(w, "merchant wallet not found", http.StatusBadRequest)
+		return
+	}
+
+	signature, senderWallet, detectErr := watcher.DetectSignatureByReferenceForMerchant(req.Reference, amount, merchantWallet)
+	if detectErr != nil {
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":  "pending",
+			"message": detectErr.Error(),
+		})
+		return
+	}
+	if strings.TrimSpace(invoiceData["wallet_address"]) == "" && senderWallet != "" {
+		invoiceData["wallet_address"] = senderWallet
+	}
+	if err := finalizePaidCheckout(req.Reference, signature, invoiceData, amount); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = database.RDB.Del(database.Ctx, redisKey).Err()
+	resp, _ := getCheckoutStatusByReference(req.Reference)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -560,85 +572,127 @@ func GetCheckoutStatus(w http.ResponseWriter, r *http.Request) {
 
 func getCheckoutStatusByReference(reference string) (CheckoutStatusResponse, error) {
 	var resp CheckoutStatusResponse
-	var approvedAt *time.Time
+	var participantDataJSON []byte
 	err := database.DB.QueryRow(`
-		SELECT ec.reference, ec.status, COALESCE(ec.signature, ''), COALESCE(ec.approved_by, ''), ec.approved_at, e.network, COALESCE(ec.notes, '')
+		SELECT ec.reference, ec.status, COALESCE(ec.signature, ''), ec.participant_data, COALESCE(ec.payment_method, 'wallet')
 		FROM event_checkouts ec
-		JOIN events e ON e.id = ec.event_id
 		WHERE ec.reference = $1
-	`, reference).Scan(&resp.Reference, &resp.Status, &resp.Signature, &resp.ApprovedBy, &approvedAt, &resp.Network, &resp.Reason)
+	`, reference).Scan(&resp.Reference, &resp.Status, &resp.Signature, &participantDataJSON, &resp.PaymentMethod)
 	if err != nil {
 		return resp, err
 	}
-	if approvedAt != nil {
-		resp.ApprovedAt = approvedAt.Format(time.RFC3339)
-	}
+	resp.Network = networkFromMint()
 	if resp.Signature != "" {
 		resp.SolscanURL = solscanURLForNetwork(resp.Signature, resp.Network)
 	}
-	return resp, nil
-}
-
-func latestReceiptByInviteCode(slug string, code string) (*CheckoutStatusResponse, error) {
-	var reference, status, signature, approvedBy, network, reason string
-	var approvedAt *time.Time
-	err := database.DB.QueryRow(`
-		SELECT ec.reference, ec.status, COALESCE(ec.signature, ''), COALESCE(ec.approved_by, ''), ec.approved_at, e.network, COALESCE(ec.notes, '')
-		FROM event_checkouts ec
-		JOIN invite_codes ic ON ic.id = ec.invite_code_id
-		JOIN events e ON e.id = ec.event_id
-		WHERE e.slug = $1 AND ic.code = $2
-		ORDER BY ec.created_at DESC
-		LIMIT 1
-	`, slug, code).Scan(&reference, &status, &signature, &approvedBy, &approvedAt, &network, &reason)
-	if err != nil {
-		return nil, err
-	}
-
-	if status != "paid" && status != "approved" && status != "rejected" {
-		return nil, nil
-	}
-
-	resp := &CheckoutStatusResponse{
-		Reference:  reference,
-		Status:     status,
-		Signature:  signature,
-		Network:    network,
-		ApprovedBy: approvedBy,
-		Reason:     reason,
-	}
-	if approvedAt != nil {
-		resp.ApprovedAt = approvedAt.Format(time.RFC3339)
-	}
-	if signature != "" {
-		resp.SolscanURL = solscanURLForNetwork(signature, network)
+	if len(participantDataJSON) > 0 {
+		_ = json.Unmarshal(participantDataJSON, &resp.ParticipantData)
 	}
 	return resp, nil
 }
 
-func isInviteCodeUsable(slug string, code string) (bool, string, error) {
-	var usedCount, maxUses int
-	var status string
-	var expiresAt *time.Time
-	err := database.DB.QueryRow(`
-		SELECT ic.used_count, ic.max_uses, ic.status, ic.expires_at
-		FROM invite_codes ic
-		JOIN events e ON e.id = ic.event_id
-		WHERE e.slug = $1 AND ic.code = $2 AND e.status = 'active'
-	`, slug, code).Scan(&usedCount, &maxUses, &status, &expiresAt)
+func finalizePaidCheckout(reference string, signature string, invoiceData map[string]string, amount int64) error {
+	walletAddress := strings.TrimSpace(invoiceData["wallet_address"])
+	if walletAddress == "" {
+		walletAddress = "unknown_wallet"
+	}
+	eventID, err := strconv.ParseInt(invoiceData["event_id"], 10, 64)
 	if err != nil {
-		return false, "Invite code not found", nil
+		return err
 	}
-	if status != "active" && status != "used" {
-		return false, "Invite code is inactive", nil
+	participantData := strings.TrimSpace(invoiceData["participant_data"])
+	if participantData == "" {
+		participantData = "{}"
 	}
-	if expiresAt != nil && expiresAt.Before(time.Now()) {
-		return false, "Invite code expired", nil
+	paymentMethod := strings.TrimSpace(invoiceData["payment_method"])
+	if paymentMethod == "" {
+		paymentMethod = "wallet"
 	}
-	if usedCount >= maxUses {
-		return false, "Invite code already used", nil
+
+	// Bound rule: 1 email = 1 paid transaction per event.
+	var participantMap map[string]interface{}
+	_ = json.Unmarshal([]byte(participantData), &participantMap)
+	email := strings.ToLower(strings.TrimSpace(fmt.Sprint(participantMap["email"])))
+	if email != "" && email != "<nil>" {
+		var exists bool
+		err := database.DB.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1
+				FROM event_checkouts
+				WHERE event_id = $1
+				  AND status = 'paid'
+				  AND reference <> $2
+				  AND LOWER(COALESCE(participant_data->>'email', '')) = $3
+			)
+		`, eventID, reference, email).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return fmt.Errorf("this email already completed a transaction for this event")
+		}
 	}
-	return true, "ok", nil
+
+	_, err = database.DB.Exec(`
+		INSERT INTO invoice (wallet_address, reference, amount, signature, status, err_reason)
+		VALUES ($1, $2, $3, $4, $5, NULL)
+		ON CONFLICT (reference) DO UPDATE
+		SET status = EXCLUDED.status,
+		    signature = EXCLUDED.signature,
+		    err_reason = NULL
+	`, walletAddress, reference, amount, signature, enum.INVOICE_PAID)
+	if err != nil {
+		return err
+	}
+
+	_, err = database.DB.Exec(`
+		INSERT INTO event_checkouts (event_id, wallet_address, reference, signature, amount, status, paid_at, participant_data, payment_method)
+		VALUES ($1, $2, $3, $4, $5, 'paid', NOW(), $6::jsonb, $7)
+		ON CONFLICT (reference) DO UPDATE
+		SET status = 'paid',
+		    signature = EXCLUDED.signature,
+		    paid_at = NOW(),
+		    participant_data = EXCLUDED.participant_data,
+		    payment_method = EXCLUDED.payment_method
+	`, eventID, walletAddress, reference, signature, amount, participantData, paymentMethod)
+	return err
+}
+
+func ensureParticipantEmailAvailable(eventID int64, participantData map[string]interface{}) error {
+	email := strings.ToLower(strings.TrimSpace(fmt.Sprint(participantData["email"])))
+	if email == "" || email == "<nil>" {
+		return nil
+	}
+	var exists bool
+	err := database.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1
+			FROM event_checkouts
+			WHERE event_id = $1
+			  AND status = 'paid'
+			  AND LOWER(COALESCE(participant_data->>'email', '')) = $2
+		)
+	`, eventID, email).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("this email already completed a transaction for this event")
+	}
+	return nil
+}
+
+func networkFromMint() string {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SOLANA_CLUSTER")), "mainnet") {
+		return "mainnet"
+	}
+	mint := strings.TrimSpace(os.Getenv("USDC_MINT"))
+	switch mint {
+	case "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU":
+		return "devnet"
+	default:
+		return "mainnet"
+	}
 }
 
 func truncateErrorMessage(msg string, max int) string {

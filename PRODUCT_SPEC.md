@@ -4,16 +4,16 @@
 Event Deposit Checkout Builder on Solana USDC.
 
 ## Problem
-Event hosts need a simple way to collect participant deposits with invite-code control, receipt verification, and approval/rejection workflow.
+Event hosts need a simple way to collect participant deposits with customizable participant forms, receipt verification, and transaction tracking.
 
 ## Target Users
 - Event hosts (create/manage event checkout sessions)
-- Participants (pay deposit with invite code)
+- Participants (submit required info and pay deposit)
 
 ## Core Value
-- Host can create an event checkout link quickly.
-- Participant can validate invite code and pay USDC.
-- Host can approve/reject participant deposits with a clear ledger.
+- Host can create/import event data quickly and publish checkout links.
+- Participant can complete required form fields and pay USDC.
+- Host can track transaction receipts with clear on-chain references.
 
 ## Primary Flows
 1. Host auth
@@ -22,22 +22,24 @@ Event hosts need a simple way to collect participant deposits with invite-code c
 
 2. Host event management
 - Create event metadata
-- Generate/manage invite codes
+- Choose event source (custom or Luma import)
+- Define checkout participant fields (default name/email + custom fields)
+- Choose payment methods (wallet / QR)
 - Share checkout URL
 - Review participant deposits
-- Approve/reject with reason
 
 3. Participant checkout
 - Open event checkout page
-- Validate invite code
-- Pay deposit (wallet flow or manual transfer verification)
+- Fill required participant fields
+- Pay deposit (wallet flow or QR/manual transfer verification)
 - Receive transaction receipt + status
 
 ## MVP Scope
 - Solana USDC deposit flow
-- Invite code gate
 - Host dashboard CRUD for events
-- Participant deposit review/approval/rejection
+- Dynamic participant form schema per event
+- QR + wallet payment options
+- Participant deposit transaction view
 - Manual signature verification and recheck
 - Mobile + desktop responsive management UI
 
@@ -50,4 +52,4 @@ Event hosts need a simple way to collect participant deposits with invite-code c
 ## Success Criteria
 - Host can run end-to-end event deposit flow without manual database work
 - Participants can submit verifiable on-chain payment proof
-- Host can reliably decide approve/reject status
+- Host can reliably view transaction states and references

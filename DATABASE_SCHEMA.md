@@ -7,11 +7,14 @@
 ## Event Checkout Domain
 - `events`
   - owner_email-scoped
-  - metadata + merchant wallet + amount + network
-- `invite_codes`
-  - unique code, usage counters, status, optional expiry
+  - metadata + source (`custom`/`luma`) + source URL
+  - merchant wallet + amount
+  - participant form schema JSONB
+  - payment methods JSONB (`wallet`, `qr`)
+- `invite_codes` (legacy/deprecated)
+  - no longer used in active checkout flow
 - `event_checkouts`
-  - participant wallet, reference, signature, status lifecycle, moderation fields
+  - participant wallet, participant data JSONB, reference, signature, status lifecycle
 
 `checkout_status` enum includes:
 - `pending_payment`
@@ -34,6 +37,7 @@
 - `000007_add_event_owner_fields.*`
 - `000008_add_rejected_checkout_status.*`
 - `000009_add_auth_tables.*`
+- `000010_checkout_form_and_source.*`
 
 ## Migration Notes
 - Apply migrations in order.
