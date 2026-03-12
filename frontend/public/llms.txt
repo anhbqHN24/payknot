@@ -1,0 +1,5 @@
+# Payknot AI Discovery Index
+
+- https://pay.crea8r.xyz/openapi.json
+- https://pay.crea8r.xyz/.well-known/agent.json
+- https://pay.crea8r.xyz/agent-docs/INDEX.md

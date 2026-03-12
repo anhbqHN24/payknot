@@ -3,8 +3,10 @@
 Base URL: `https://pay.crea8r.xyz`
 
 Machine-readable:
-- `/.well-known/agent-integration.json`
+- `/llms.txt`
 - `/openapi.json`
+- `/.well-known/agent.json`
+- `/.well-known/agent-integration.json`
 
 Core implementation docs:
 - [SKILL.md](./SKILL.md)
@@ -17,6 +19,10 @@ Core implementation docs:
 - [OPERATIONS_RUNBOOK.md](./OPERATIONS_RUNBOOK.md)
 - [QA_UAT_TEST_PLAN.md](./QA_UAT_TEST_PLAN.md)
 - [README.md](./README.md)
+
+Task-oriented docs:
+- [auth.md](./auth.md)
+- [examples.md](./examples.md)
 
 Notes:
 - Host event-management endpoints support user-session auth and agent signature auth.
