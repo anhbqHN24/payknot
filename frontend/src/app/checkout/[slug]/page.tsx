@@ -102,6 +102,7 @@ function CheckoutInner() {
   const { publicKey, sendTransaction } = useWallet();
   const popupRef = useRef<Window | null>(null);
   const lookupSectionRef = useRef<HTMLElement | null>(null);
+  const step3SectionRef = useRef<HTMLElement | null>(null);
 
   const [eventData, setEventData] = useState<EventData | null>(null);
   const [participantData, setParticipantData] = useState<
@@ -117,11 +118,9 @@ function CheckoutInner() {
   const [lookupEmail, setLookupEmail] = useState("");
   const [lookupError, setLookupError] = useState("");
   const [highlightLookup, setHighlightLookup] = useState(false);
+  const [highlightStep3, setHighlightStep3] = useState(false);
   const [reference, setReference] = useState("");
   const [statusData, setStatusData] = useState<CheckoutStatus | null>(null);
-  const [existingReceipt, setExistingReceipt] = useState<CheckoutStatus | null>(
-    null,
-  );
   const [showFullSignature, setShowFullSignature] = useState(false);
   const [participantErrors, setParticipantErrors] = useState<
     Record<string, string>
@@ -690,9 +689,16 @@ function CheckoutInner() {
                   );
                   return;
                 }
-                setExistingReceipt(receipt);
                 hydrateStatus(receipt);
                 setStep(2);
+                window.setTimeout(() => {
+                  step3SectionRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                  setHighlightStep3(true);
+                  window.setTimeout(() => setHighlightStep3(false), 2200);
+                }, 80);
               } finally {
                 setCheckingLookup(false);
               }
@@ -850,7 +856,12 @@ function CheckoutInner() {
       )}
 
       {step === 2 && (
-        <section className="mt-4 rounded-xl border p-4">
+        <section
+          ref={step3SectionRef}
+          className={`mt-4 rounded-xl border p-4 transition-all ${
+            highlightStep3 ? "ring-2 ring-amber-400 border-amber-400" : ""
+          }`}
+        >
           <h2 className="mb-3 text-lg font-semibold">Step 3: Pay & Receipt</h2>
           <p className="mb-3 text-sm text-slate-600">
             Method: {methodLabel(chosenMethod)}
@@ -933,10 +944,46 @@ function CheckoutInner() {
                 Method: {methodLabel(statusData?.paymentMethod || chosenMethod)}
               </p>
               {statusData?.signature && (
-                <p>
-                  Signature:{" "}
-                  <span className="font-mono">{statusData.signature}</span>
-                </p>
+                <div>
+                  <p className="mb-1">Signature:</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">
+                      {statusData.signature.length > 24
+                        ? `${statusData.signature.slice(0, 24)}...`
+                        : statusData.signature}
+                    </span>
+                    <button
+                      type="button"
+                      title={statusData.signature}
+                      className="rounded border px-1.5 py-0.5 text-xs"
+                      onClick={() => setShowFullSignature((v) => !v)}
+                    >
+                      i
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border px-1.5 py-0.5 text-xs"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(
+                            statusData.signature,
+                          );
+                          void message.success("Signature copied to clipboard.");
+                        } catch {
+                          // no-op
+                        }
+                      }}
+                      title="Copy signature"
+                    >
+                      ⧉
+                    </button>
+                  </div>
+                  {showFullSignature && (
+                    <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
+                      {statusData.signature}
+                    </p>
+                  )}
+                </div>
               )}
               {statusData?.solscanUrl && (
                 <a
@@ -964,91 +1011,6 @@ function CheckoutInner() {
         </section>
       )}
 
-      {existingReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-semibold">
-              Existing completed transaction
-            </h3>
-            <p className="mt-2 text-sm text-slate-600">
-              This participant already completed payment for this event.
-            </p>
-            <div className="mt-4 rounded border bg-slate-50 p-3 text-sm">
-              <p>
-                Reference:{" "}
-                <span className="font-mono">{existingReceipt.reference}</span>
-              </p>
-              <p>Status: {existingReceipt.status}</p>
-              <p>Method: {methodLabel(existingReceipt.paymentMethod)}</p>
-              {existingReceipt.signature && (
-                <div>
-                  <p className="mb-1">Signature:</p>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs">
-                      {existingReceipt.signature.length > 24
-                        ? `${existingReceipt.signature.slice(0, 24)}...`
-                        : existingReceipt.signature}
-                    </span>
-                    <button
-                      type="button"
-                      title={existingReceipt.signature}
-                      className="rounded border px-1.5 py-0.5 text-xs"
-                      onClick={() => setShowFullSignature((v) => !v)}
-                    >
-                      i
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border px-1.5 py-0.5 text-xs"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(
-                            existingReceipt.signature,
-                          );
-                          void message.success(
-                            "Signature copied to clipboard.",
-                          );
-                        } catch {
-                          // no-op
-                        }
-                      }}
-                      title="Copy signature"
-                    >
-                      ⧉
-                    </button>
-                  </div>
-                  {showFullSignature && (
-                    <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
-                      {existingReceipt.signature}
-                    </p>
-                  )}
-                </div>
-              )}
-              {existingReceipt.solscanUrl && (
-                <a
-                  href={existingReceipt.solscanUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-600 underline"
-                >
-                  View transaction on Solscan
-                </a>
-              )}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                className="rounded bg-slate-900 px-4 py-2 text-white"
-                onClick={() => {
-                  setExistingReceipt(null);
-                  setShowFullSignature(false);
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
