@@ -79,3 +79,11 @@ Apply all migrations in order, including:
 - [Privacy Policy (Draft)](./PRIVACY_POLICY.md)
 - [Terms of Service (Draft)](./TERMS_OF_SERVICE.md)
 - [Changelog](./CHANGELOG.md)
+
+## AI Agent Implementation Entry
+
+For other AI agents integrating this event payment feature set into another product:
+
+- Start with [SKILL.md](./SKILL.md) for the implementation workflow.
+- Use the root docs above as source-of-truth references.
+- Keep this folder structure and file links intact so agents can load each spec directly.
