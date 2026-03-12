@@ -20,11 +20,11 @@ env:
 jobs:
   build-and-push:
     # Uses native ARM64 runners to avoid slow QEMU emulation
-    runs-on: ubuntu-24.04-arm 
+    runs-on: ubuntu-24.04-arm
     strategy:
       matrix:
         component: [backend, frontend]
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,6 +71,21 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout (for migration files)
+        uses: actions/checkout@v4
+
+      - name: Upload migrations to EC2 (release-scoped)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          source: backend/migrations/*
+          target: /home/ubuntu/payknot-deploy/releases/${{ github.sha }}/migrations/
+          strip_components: 2
+          overwrite: true
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -84,6 +99,7 @@ jobs:
             DEPLOY_ROOT="/home/ubuntu/payknot-deploy"
             IMAGE_REPO="ghcr.io/anhbqhn24/payknot"
             IMAGE_TAG="${{ github.sha }}"
+            MIGRATIONS_DIR="$DEPLOY_ROOT/releases/$IMAGE_TAG/migrations"
 
             mkdir -p "$DEPLOY_ROOT"
             cd "$DEPLOY_ROOT"
@@ -110,11 +126,12 @@ jobs:
             # Ensure DB dependencies are up before migration
             docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d postgres redis
 
-            # Run DB migrations (idempotent) before backend/frontend rollout
+            # Run DB migrations from release-scoped files synced by CI
+            test -d "$MIGRATIONS_DIR"
             DB_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)"
             docker run --rm \
               --network payknot-deploy_default \
-              -v "$DEPLOY_ROOT/repo/backend/migrations:/migrations:ro" \
+              -v "$MIGRATIONS_DIR:/migrations:ro" \
               migrate/migrate:v4.18.3 \
               -path=/migrations -database "$DB_URL" up
 
