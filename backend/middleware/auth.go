@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"solana_paywall/backend/database"
@@ -173,7 +174,23 @@ func SessionExpiryFromNow() time.Time {
 	return time.Now().Add(sessionTTL())
 }
 
-func agentPublicKeys() map[string]ed25519.PublicKey {
+type agentKeyCache struct {
+	mu        sync.RWMutex
+	keys      map[string]ed25519.PublicKey
+	expiresAt time.Time
+}
+
+var runtimeAgentKeyCache = &agentKeyCache{}
+
+func agentKeyCacheTTL() time.Duration {
+	sec, err := strconv.Atoi(strings.TrimSpace(os.Getenv("AGENT_KEY_CACHE_TTL_SECONDS")))
+	if err == nil && sec > 0 {
+		return time.Duration(sec) * time.Second
+	}
+	return 60 * time.Second
+}
+
+func agentPublicKeysFromEnv() map[string]ed25519.PublicKey {
 	raw := strings.TrimSpace(os.Getenv("AGENT_PUBLIC_KEYS_JSON"))
 	if raw == "" {
 		return nil
@@ -195,6 +212,63 @@ func agentPublicKeys() map[string]ed25519.PublicKey {
 		out[agentID] = ed25519.PublicKey(keyBytes)
 	}
 	return out
+}
+
+func agentPublicKeysFromDB() (map[string]ed25519.PublicKey, error) {
+	rows, err := database.DB.Query(`
+		SELECT agent_id, public_key_base64
+		FROM agent_api_keys
+		WHERE active = TRUE AND revoked_at IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]ed25519.PublicKey)
+	for rows.Next() {
+		var agentID, keyB64 string
+		if scanErr := rows.Scan(&agentID, &keyB64); scanErr != nil {
+			continue
+		}
+		agentID = strings.TrimSpace(agentID)
+		keyBytes, decErr := base64.StdEncoding.DecodeString(strings.TrimSpace(keyB64))
+		if agentID == "" || decErr != nil || len(keyBytes) != ed25519.PublicKeySize {
+			continue
+		}
+		out[agentID] = ed25519.PublicKey(keyBytes)
+	}
+	return out, nil
+}
+
+func InvalidateAgentKeyCache() {
+	runtimeAgentKeyCache.mu.Lock()
+	defer runtimeAgentKeyCache.mu.Unlock()
+	runtimeAgentKeyCache.keys = nil
+	runtimeAgentKeyCache.expiresAt = time.Time{}
+}
+
+func agentPublicKeys() map[string]ed25519.PublicKey {
+	now := time.Now()
+	runtimeAgentKeyCache.mu.RLock()
+	if runtimeAgentKeyCache.keys != nil && now.Before(runtimeAgentKeyCache.expiresAt) {
+		cached := runtimeAgentKeyCache.keys
+		runtimeAgentKeyCache.mu.RUnlock()
+		return cached
+	}
+	runtimeAgentKeyCache.mu.RUnlock()
+
+	keys, err := agentPublicKeysFromDB()
+	if err != nil || len(keys) == 0 {
+		keys = agentPublicKeysFromEnv()
+	}
+
+	runtimeAgentKeyCache.mu.Lock()
+	runtimeAgentKeyCache.keys = keys
+	runtimeAgentKeyCache.expiresAt = now.Add(agentKeyCacheTTL())
+	runtimeAgentKeyCache.mu.Unlock()
+
+	return keys
 }
 
 func verifyAgentSignature(r *http.Request) (AuthClaims, bool) {

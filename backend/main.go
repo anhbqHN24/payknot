@@ -23,6 +23,8 @@ func main() {
 	http.HandleFunc("/api/events", middleware.RequireAuthOrAgentKey(api.EventsRoot))
 	http.HandleFunc("/api/events/", middleware.RequireAuthOrAgentKey(api.EventsSubroutes))
 	http.HandleFunc("/api/events/import/luma", middleware.RequireAuthOrAgentKey(api.ImportLumaEvent))
+	http.HandleFunc("/api/agent-keys", middleware.RequireAuth(api.AgentKeysRoot))
+	http.HandleFunc("/api/agent-keys/revoke", middleware.RequireAuth(api.RevokeAgentKey))
 	http.HandleFunc("/api/checkout/invoice", api.CreateCheckoutInvoice)
 	http.HandleFunc("/api/checkout/cancel", api.CancelCheckoutInvoice)
 	http.HandleFunc("/api/checkout/confirm", api.ConfirmCheckoutPayment)

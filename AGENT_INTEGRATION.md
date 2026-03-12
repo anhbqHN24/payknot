@@ -47,8 +47,15 @@ POST
 <sha256-hex-of-json-body>
 ```
 
-### Server env
-Use one env var mapping multiple agents:
+### Server key registry
+Preferred (runtime change without redeploy):
+- store keys in DB table `agent_api_keys`
+- manage via host APIs:
+  - `GET /api/agent-keys`
+  - `POST /api/agent-keys` (upsert)
+  - `POST /api/agent-keys/revoke`
+
+Fallback/bootstrap:
 - `AGENT_PUBLIC_KEYS_JSON` (JSON object)
 - Format: `{"agent-a":"<base64-public-key>","agent-b":"<base64-public-key>"}`
 

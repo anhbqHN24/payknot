@@ -18,22 +18,32 @@ Base: `/api`
 - `POST /auth/logout`
   - revokes current session, clears cookie
 
-## Host Event Management (auth required)
+## Host Event Management (auth required, supports agent signature auth)
 - `GET /events`
-  - returns current user-owned events
+  - returns current user-owned events (or `owner_email=agent:<agent-id>` for agent signatures)
 - `POST /events`
   - body: event fields
   - creates event with source metadata + participant form schema + payment methods
 - `PUT /events/{id}`
   - body: event fields
-  - updates event if owned by current user
+  - updates event if owned by current user/agent owner identity
 - `DELETE /events/{id}`
-  - deletes event if owned by current user
+  - deletes event if owned by current user/agent owner identity
 - `POST /events/import/luma`
   - body: `{ url }`
   - imports metadata from public Luma event pages
 - `GET /events/{id}/checkouts`
   - returns participant deposit rows
+
+## Agent Key Registry (host session auth required)
+- `GET /agent-keys`
+  - lists configured agent keys (active/revoked)
+- `POST /agent-keys`
+  - body: `{ agentId, publicKeyBase64 }`
+  - creates or updates (upsert) an agent key
+- `POST /agent-keys/revoke`
+  - body: `{ agentId }`
+  - revokes an agent key
 
 ## Participant Checkout (public)
 - `GET /checkout/{slug}`
@@ -55,6 +65,14 @@ Base: `/api`
   - removes abandoned pending records
 - `GET /checkout/status?reference=...`
   - returns receipt state
+
+## Agent Signature Auth Headers (for supported host endpoints)
+- `X-Agent-Id: <agent-id>`
+- `X-Agent-Timestamp: <unix-seconds>`
+- `X-Agent-Signature: <base64-ed25519-signature>`
+
+Canonical signed payload:
+`METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + SHA256_HEX(BODY_RAW)`
 
 ## Error Shape
 - Current implementation returns plain text errors with HTTP status codes.
