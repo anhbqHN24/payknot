@@ -2,10 +2,14 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Payknot Event Checkout API",
-    "version": "1.0.0"
+    "version": "1.1.0",
+    "description": "API for event management and Solana USDC checkout sessions. Supports cookie auth for host dashboard and Ed25519 signature auth for external agents."
   },
   "servers": [
-    { "url": "https://pay.crea8r.xyz/api" }
+    {
+      "url": "https://pay.crea8r.xyz/api",
+      "description": "Production"
+    }
   ],
   "components": {
     "securitySchemes": {
@@ -13,67 +17,683 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Agent-Signature",
-        "description": "Also requires X-Agent-Id and X-Agent-Timestamp. Signature uses Ed25519 over canonical string: METHOD + \\n + PATH + \\n + TIMESTAMP + \\n + SHA256_HEX(BODY_RAW)."
+        "description": "Agent signature auth. Also send X-Agent-Id and X-Agent-Timestamp. Canonical string: METHOD + \\n + PATH + \\n + TIMESTAMP + \\n + SHA256_HEX(BODY_RAW)."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "spw_session",
+        "description": "Host dashboard session cookie auth."
+      }
+    },
+    "parameters": {
+      "EventId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Numeric event identifier.",
+        "schema": { "type": "integer", "format": "int64" }
+      },
+      "Slug": {
+        "name": "slug",
+        "in": "path",
+        "required": true,
+        "description": "Event checkout slug.",
+        "schema": { "type": "string" }
+      },
+      "SessionId": {
+        "name": "sessionId",
+        "in": "path",
+        "required": true,
+        "description": "UUID payment session id.",
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "Reference": {
+        "name": "reference",
+        "in": "query",
+        "required": true,
+        "description": "Checkout/payment reference UUID.",
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Normalized error response shape for SDK/agent handling.",
+        "properties": {
+          "code": { "type": "string", "description": "Stable machine-readable error code.", "example": "invalid_request" },
+          "message": { "type": "string", "description": "Human-readable error detail.", "example": "walletAddress is required for wallet method" },
+          "details": { "type": "object", "description": "Optional structured context for debugging." },
+          "retryable": { "type": "boolean", "description": "Whether client can retry safely.", "example": false }
+        }
+      },
+      "ParticipantField": {
+        "type": "object",
+        "description": "Checkout participant form field definition.",
+        "required": ["field_name", "required"],
+        "properties": {
+          "field_name": { "type": "string", "description": "Form field name key shown to participant.", "example": "email" },
+          "required": { "type": "boolean", "description": "Whether field is mandatory.", "example": true }
+        }
+      },
+      "PaymentMethods": {
+        "type": "object",
+        "description": "Allowed payment methods for an event.",
+        "properties": {
+          "wallet": { "type": "boolean", "description": "Enable wallet flow.", "example": true },
+          "qr": { "type": "boolean", "description": "Enable QR session flow.", "example": true }
+        }
+      },
+      "CreateEventRequest": {
+        "type": "object",
+        "description": "Create or update event payload.",
+        "required": ["title", "merchantWallet", "amountUsdc", "checkoutExpiresAt"],
+        "properties": {
+          "title": { "type": "string", "description": "Public event title.", "example": "Web3 Builders Night" },
+          "description": { "type": "string", "description": "Event description (plain text or sanitized rich text)." },
+          "eventImageUrl": { "type": "string", "description": "Hosted event cover image URL.", "example": "https://cdn.example.com/event.jpg" },
+          "eventDate": { "type": "string", "format": "date-time", "description": "ISO8601 event date/time." },
+          "checkoutExpiresAt": { "type": "string", "format": "date-time", "description": "Checkout deadline in ISO8601." },
+          "location": { "type": "string", "description": "Location or meeting URL." },
+          "organizerName": { "type": "string", "description": "Displayed organizer name." },
+          "merchantWallet": { "type": "string", "description": "Solana wallet receiving USDC.", "example": "8f4...abc" },
+          "amountUsdc": { "type": "integer", "description": "Deposit amount in whole USDC units.", "example": 10 },
+          "eventSource": { "type": "string", "description": "Source type for event metadata.", "enum": ["custom", "luma"], "example": "custom" },
+          "sourceUrl": { "type": "string", "description": "Original source URL if imported." },
+          "participantFormSchema": {
+            "type": "array",
+            "description": "Custom participant form schema.",
+            "items": { "$ref": "#/components/schemas/ParticipantField" }
+          },
+          "paymentMethods": { "$ref": "#/components/schemas/PaymentMethods" }
+        }
+      },
+      "CreateEventResponse": {
+        "type": "object",
+        "description": "Created event metadata and checkout URL.",
+        "properties": {
+          "eventId": { "type": "integer", "format": "int64", "description": "Unique numeric event id." },
+          "slug": { "type": "string", "description": "URL-safe event slug.", "example": "web3-builders-night" },
+          "checkoutUrl": { "type": "string", "description": "Shareable checkout path.", "example": "/checkout/web3-builders-night" },
+          "eventImageUrl": { "type": "string" },
+          "checkoutExpiresAt": { "type": "string", "format": "date-time" },
+          "amountUsdc": { "type": "string", "description": "Display amount string.", "example": "10.00" },
+          "merchantWallet": { "type": "string" },
+          "eventSource": { "type": "string" },
+          "sourceUrl": { "type": "string" },
+          "participantFormSchema": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ParticipantField" }
+          },
+          "paymentMethods": { "$ref": "#/components/schemas/PaymentMethods" }
+        }
+      },
+      "EventListResponse": {
+        "type": "object",
+        "description": "Owner-scoped event list.",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "eventId": { "type": "integer", "format": "int64" },
+                "slug": { "type": "string" },
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "eventImageUrl": { "type": "string" },
+                "eventDate": { "type": "string", "format": "date-time" },
+                "checkoutExpiresAt": { "type": "string", "format": "date-time" },
+                "location": { "type": "string" },
+                "organizerName": { "type": "string" },
+                "merchantWallet": { "type": "string" },
+                "amountUsdc": { "type": "string" },
+                "eventSource": { "type": "string" },
+                "sourceUrl": { "type": "string" },
+                "paymentMethods": { "$ref": "#/components/schemas/PaymentMethods" },
+                "createdAt": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "ImportLumaRequest": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "description": "Public Luma event URL.", "example": "https://lu.ma/abc123" }
+        }
+      },
+      "AgentKeyUpsertRequest": {
+        "type": "object",
+        "required": ["agentId", "publicKeyBase64"],
+        "properties": {
+          "agentId": { "type": "string", "description": "Stable external agent identity.", "example": "assistant-nyc-01" },
+          "publicKeyBase64": { "type": "string", "description": "Ed25519 public key in base64.", "example": "QWxhZGRpbjpvcGVuIHNlc2FtZQ==" }
+        }
+      },
+      "AgentKeyRevokeRequest": {
+        "type": "object",
+        "required": ["agentId"],
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent identity to revoke.", "example": "assistant-nyc-01" }
+        }
+      },
+      "AgentKeyListResponse": {
+        "type": "object",
+        "properties": {
+          "agentKeys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": { "type": "string" },
+                "publicKeyBase64": { "type": "string" },
+                "active": { "type": "boolean" },
+                "createdBy": { "type": "string" },
+                "createdAt": { "type": "string", "format": "date-time" },
+                "revokedAt": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "CreateCheckoutInvoiceRequest": {
+        "type": "object",
+        "required": ["slug", "participantData", "paymentMethod"],
+        "properties": {
+          "slug": { "type": "string", "description": "Checkout event slug.", "example": "web3-builders-night" },
+          "walletAddress": { "type": "string", "description": "Participant wallet address (required for wallet method)." },
+          "participantData": { "type": "object", "description": "Participant form values keyed by field name." },
+          "paymentMethod": { "type": "string", "enum": ["wallet", "qr"], "description": "Selected payment path." }
+        }
+      },
+      "CreateCheckoutInvoiceResponse": {
+        "type": "object",
+        "properties": {
+          "reference": { "type": "string", "format": "uuid", "description": "Session/payment reference UUID." },
+          "amountRaw": { "type": "integer", "description": "USDC amount in atomic units (6 decimals)." },
+          "network": { "type": "string", "description": "Solana network identifier.", "example": "devnet" }
+        }
+      },
+      "ConfirmCheckoutPaymentRequest": {
+        "type": "object",
+        "required": ["reference", "signature"],
+        "properties": {
+          "reference": { "type": "string", "format": "uuid", "description": "Invoice reference UUID." },
+          "signature": { "type": "string", "description": "Confirmed Solana transaction signature." }
+        }
+      },
+      "CheckoutStatusResponse": {
+        "type": "object",
+        "properties": {
+          "reference": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "description": "Checkout state.", "example": "paid" },
+          "signature": { "type": "string", "description": "On-chain tx signature if paid." },
+          "network": { "type": "string" },
+          "solscanUrl": { "type": "string" },
+          "paymentMethod": { "type": "string", "enum": ["wallet", "qr"] },
+          "participantData": { "type": "object" }
+        }
+      },
+      "CheckoutEventResponse": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "eventImageUrl": { "type": "string" },
+          "eventDate": { "type": "string", "format": "date-time" },
+          "location": { "type": "string" },
+          "organizerName": { "type": "string" },
+          "merchantWallet": { "type": "string" },
+          "amountUsdc": { "type": "string" },
+          "amountRaw": { "type": "integer" },
+          "network": { "type": "string" },
+          "participantForm": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ParticipantField" }
+          },
+          "paymentMethodWallet": { "type": "boolean" },
+          "paymentMethodQr": { "type": "boolean" }
+        }
+      },
+      "V1CreatePaymentSessionRequest": {
+        "type": "object",
+        "required": ["paymentMethod", "participantData"],
+        "properties": {
+          "eventId": { "type": "integer", "format": "int64", "description": "Numeric event id. Optional if slug is provided." },
+          "slug": { "type": "string", "description": "Event slug for public checkout-based session creation." },
+          "paymentMethod": { "type": "string", "enum": ["wallet", "qr"], "description": "Requested payment method." },
+          "walletAddress": { "type": "string", "description": "Participant wallet address; required when paymentMethod is wallet." },
+          "participantData": { "type": "object", "description": "Participant form payload." }
+        }
+      },
+      "V1PaymentSessionResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "reference": { "type": "string", "format": "uuid" },
+          "state": { "type": "string", "example": "awaiting_payment" },
+          "paymentMethod": { "type": "string", "enum": ["wallet", "qr"] },
+          "amountAtomic": { "type": "integer", "description": "USDC amount in atomic units." },
+          "mint": { "type": "string", "description": "SPL mint address." },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "V1SubmitSignatureRequest": {
+        "type": "object",
+        "required": ["signature"],
+        "properties": {
+          "signature": { "type": "string", "description": "Solana transaction signature to verify and finalize." }
+        }
       }
     }
   },
   "paths": {
-    "/v1/payment-sessions": {
-      "post": {
-        "summary": "Create server-owned payment session",
-        "security": [{ "AgentSignature": [] }]
-      }
-    },
-    "/v1/payment-sessions/{sessionId}/status": {
-      "get": { "summary": "Get payment session status", "security": [{ "AgentSignature": [] }] }
-    },
-    "/v1/payment-sessions/{sessionId}/wallet-instructions": {
-      "post": { "summary": "Get wallet payment instructions", "security": [{ "AgentSignature": [] }] }
-    },
-    "/v1/payment-sessions/{sessionId}/submit-signature": {
-      "post": { "summary": "Submit tx signature and finalize", "security": [{ "AgentSignature": [] }] }
-    },
-    "/v1/payment-sessions/{sessionId}/verify": {
-      "post": { "summary": "Verify submitted signature/status", "security": [{ "AgentSignature": [] }] }
-    },
-    "/v1/payment-sessions/{sessionId}/cancel": {
-      "post": { "summary": "Cancel unpaid session", "security": [{ "AgentSignature": [] }] }
-    },
     "/events": {
       "get": {
-        "summary": "List events for current owner identity",
-        "security": [{ "AgentSignature": [] }]
+        "operationId": "listEvents",
+        "summary": "List events",
+        "description": "Returns events owned by current host identity (cookie session or agent signature identity).",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Event list.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventListResponse" } } }
+          },
+          "401": { "description": "Unauthorized." }
+        }
       },
       "post": {
+        "operationId": "createEvent",
         "summary": "Create event",
-        "security": [{ "AgentSignature": [] }]
+        "description": "Creates a new event under current owner context and returns checkout metadata.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEventRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event created successfully.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateEventResponse" } } }
+          },
+          "400": { "description": "Validation error." },
+          "401": { "description": "Unauthorized." }
+        }
       }
     },
     "/events/{id}": {
-      "put": { "summary": "Update event", "security": [{ "AgentSignature": [] }] },
-      "delete": { "summary": "Delete event", "security": [{ "AgentSignature": [] }] }
+      "put": {
+        "operationId": "updateEvent",
+        "summary": "Update event",
+        "description": "Updates event fields if event belongs to current owner and is editable.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/EventId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEventRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event updated.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateEventResponse" } } }
+          },
+          "401": { "description": "Unauthorized." },
+          "404": { "description": "Event not found." },
+          "409": { "description": "Event locked due to successful deposits." }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEvent",
+        "summary": "Delete event",
+        "description": "Deletes an event owned by current identity when deletion constraints are satisfied.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/EventId" }],
+        "responses": {
+          "200": {
+            "description": "Event deleted.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "ok": { "type": "boolean", "example": true } } }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized." },
+          "404": { "description": "Event not found." }
+        }
+      }
     },
     "/events/import/luma": {
-      "post": { "summary": "Import event metadata from Luma URL", "security": [{ "AgentSignature": [] }] }
+      "post": {
+        "operationId": "importEventFromLuma",
+        "summary": "Import event metadata from Luma",
+        "description": "Imports public event metadata from a Luma URL to prefill create/edit flow.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImportLumaRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Imported metadata payload.",
+            "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } }
+          },
+          "400": { "description": "Invalid URL or parse error." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
     },
     "/agent-keys": {
-      "get": { "summary": "List agent keys (host-session auth)" },
-      "post": { "summary": "Upsert agent key (host-session auth)" }
+      "get": {
+        "operationId": "listAgentKeys",
+        "summary": "List registered agent keys",
+        "description": "Returns all agent signing keys with active/revoked state. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Agent key list.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentKeyListResponse" } } }
+          },
+          "401": { "description": "Unauthorized." }
+        }
+      },
+      "post": {
+        "operationId": "upsertAgentKey",
+        "summary": "Create or update an agent public key",
+        "description": "Registers or rotates an agent Ed25519 public key by agent id. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AgentKeyUpsertRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upsert successful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "example": true },
+                    "agentId": { "type": "string", "example": "assistant-nyc-01" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid agent id or public key format." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
     },
     "/agent-keys/revoke": {
-      "post": { "summary": "Revoke agent key (host-session auth)" }
+      "post": {
+        "operationId": "revokeAgentKey",
+        "summary": "Revoke agent key",
+        "description": "Marks an agent key as revoked to block future signature auth. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AgentKeyRevokeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revocation successful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "example": true },
+                    "agentId": { "type": "string", "example": "assistant-nyc-01" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing agentId." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
     },
     "/checkout/invoice": {
-      "post": { "summary": "Create checkout invoice/session" }
+      "post": {
+        "operationId": "createCheckoutInvoice",
+        "summary": "Create checkout invoice/session (legacy)",
+        "description": "Creates legacy checkout invoice reference for wallet/QR participant payment flows.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCheckoutInvoiceRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invoice created.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateCheckoutInvoiceResponse" } } }
+          },
+          "400": { "description": "Invalid payload." },
+          "404": { "description": "Event not found." },
+          "409": { "description": "Participant already has successful payment." }
+        }
+      }
     },
     "/checkout/confirm": {
-      "post": { "summary": "Confirm payment" }
+      "post": {
+        "operationId": "confirmPayment",
+        "summary": "Confirm payment (legacy)",
+        "description": "Verifies a submitted transaction signature and marks checkout as paid.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConfirmCheckoutPaymentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment confirmed.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutStatusResponse" } } }
+          },
+          "400": { "description": "Verification failed." },
+          "404": { "description": "Invoice/session not found or expired." }
+        }
+      }
     },
     "/checkout/status": {
-      "get": { "summary": "Get checkout status by reference" }
+      "get": {
+        "operationId": "getCheckoutStatus",
+        "summary": "Get checkout status by reference",
+        "description": "Returns latest checkout state and receipt metadata for a payment reference.",
+        "parameters": [{ "$ref": "#/components/parameters/Reference" }],
+        "responses": {
+          "200": {
+            "description": "Checkout status payload.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutStatusResponse" } } }
+          },
+          "400": { "description": "Invalid reference format." },
+          "404": { "description": "Checkout not found." }
+        }
+      }
     },
     "/checkout/{slug}": {
-      "get": { "summary": "Get public checkout event metadata" }
+      "get": {
+        "operationId": "getCheckoutEventMetadata",
+        "summary": "Get checkout event metadata",
+        "description": "Public endpoint returning event checkout details and enabled payment methods.",
+        "parameters": [{ "$ref": "#/components/parameters/Slug" }],
+        "responses": {
+          "200": {
+            "description": "Checkout event metadata.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutEventResponse" } } }
+          },
+          "404": { "description": "Event not found or inactive." }
+        }
+      }
+    },
+    "/v1/payment-sessions": {
+      "post": {
+        "operationId": "createV1PaymentSession",
+        "summary": "Create headless payment session",
+        "description": "Creates a server-owned payment session for wallet or QR flow. Supports public checkout (slug) and owner-scoped contexts.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/V1CreatePaymentSessionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment session created.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/V1PaymentSessionResponse" } } }
+          },
+          "400": { "description": "Validation failed." },
+          "404": { "description": "Event not found." },
+          "409": { "description": "Participant conflict or session constraint conflict." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/status": {
+      "get": {
+        "operationId": "getV1PaymentSessionStatus",
+        "summary": "Get v1 payment session status",
+        "description": "Returns state, reference, amount/mint, and expiration for a payment session.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "Session status payload.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/V1PaymentSessionResponse" } } }
+          },
+          "400": { "description": "Invalid session id." },
+          "404": { "description": "Session not found." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/wallet-instructions": {
+      "post": {
+        "operationId": "getV1WalletInstructions",
+        "summary": "Get wallet payment instructions",
+        "description": "Returns payment reference, destination wallet, mint, and amount for direct wallet transfer flow.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "Wallet transfer instructions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reference": { "type": "string", "format": "uuid" },
+                    "merchantWallet": { "type": "string" },
+                    "amountAtomic": { "type": "integer" },
+                    "mint": { "type": "string" },
+                    "network": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "description": "Session is not payable." },
+          "404": { "description": "Session not found." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/submit-signature": {
+      "post": {
+        "operationId": "submitV1Signature",
+        "summary": "Submit and verify signature",
+        "description": "Submits Solana signature for verification and finalizes paid state when valid.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/V1SubmitSignatureRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment finalized and receipt status returned.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutStatusResponse" } } }
+          },
+          "400": { "description": "Verification failure or invalid payload." },
+          "404": { "description": "Session not found or expired." },
+          "409": { "description": "Session cannot accept signature in current state." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/verify": {
+      "post": {
+        "operationId": "verifyV1PaymentSession",
+        "summary": "Verify current v1 session state",
+        "description": "Returns latest checkout status for session reference after signature submission.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "Current checkout status.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutStatusResponse" } } }
+          },
+          "400": { "description": "Signature missing or invalid transition." },
+          "404": { "description": "Session/status not found." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/cancel": {
+      "post": {
+        "operationId": "cancelV1PaymentSession",
+        "summary": "Cancel unpaid v1 session",
+        "description": "Cancels an unpaid session and clears pending legacy invoice artifacts.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "Session cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "ok": { "type": "boolean", "example": true } }
+                }
+              }
+            }
+          },
+          "404": { "description": "Session not found." },
+          "409": { "description": "Paid sessions cannot be cancelled." }
+        }
+      }
     }
   }
 }
