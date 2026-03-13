@@ -152,6 +152,7 @@ export default function Home() {
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authCheckNonce, setAuthCheckNonce] = useState(0);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authName, setAuthName] = useState("");
@@ -217,6 +218,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
+    setAuthLoading(true);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
 
@@ -246,7 +248,7 @@ export default function Home() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, []);
+  }, [authCheckNonce]);
 
   useEffect(() => {
     if (authLoading || currentUser) return;
@@ -689,6 +691,15 @@ export default function Home() {
       setUpdating(false);
     }
   };
+
+  useEffect(() => {
+    if (!detailRender) return;
+    if (eventFormErrors.merchantWallet || eventFormErrors.amountUsdc) {
+      setDetailTab("checkoutForm");
+      setCheckoutFormAccordionOpen(true);
+      setShowCheckoutFormSection(true);
+    }
+  }, [detailRender, eventFormErrors]);
 
   const focusEventFormField = (field: string) => {
     if (field === "merchantWallet" || field === "amountUsdc") {
@@ -1637,8 +1648,14 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-slate-50 text-slate-900">
         <div className="mx-auto max-w-lg px-4 py-14">
-          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
+          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
             <p className="text-sm text-slate-600">Checking session...</p>
+            <button
+              onClick={() => setAuthCheckNonce((v) => v + 1)}
+              className="rounded-lg border px-3 py-1.5 text-sm"
+            >
+              Retry session check
+            </button>
           </section>
         </div>
       </main>
