@@ -1092,7 +1092,7 @@ export default function Home() {
       <section className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
         <h4 className="text-sm font-semibold text-slate-700">Source</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className={`text-sm ${eventSource === "custom" ? "md:col-span-2" : ""}`}>
+          <label className="text-sm md:col-span-2">
             <span className="block mb-1 font-medium">
               Event source <span className="text-rose-600">*</span>
             </span>
