@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -331,6 +332,105 @@ func V1VerifyPaymentSession(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func V1GetQrSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/payment-sessions/"))
+	id = strings.TrimSuffix(id, "/qr")
+	id = strings.TrimSuffix(id, "/")
+
+	var reference, merchantWallet, state string
+	var amount int64
+	err := database.DB.QueryRow(`
+		SELECT reference::text, merchant_wallet, amount_atomic, state
+		FROM payment_sessions
+		WHERE id = $1::uuid
+	`, id).Scan(&reference, &merchantWallet, &amount, &state)
+	if err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if state != "awaiting_payment" {
+		http.Error(w, "session is not payable", http.StatusConflict)
+		return
+	}
+	amountUsdc := float64(amount) / 1_000_000
+	query := url.Values{}
+	query.Set("amount", fmt.Sprintf("%.6f", amountUsdc))
+	query.Set("spl-token", usdcMintAddress())
+	query.Set("memo", reference)
+	query.Set("label", "Payknot Event Deposit")
+	query.Set("message", "Pay event deposit")
+	solanaPayURL := fmt.Sprintf("solana:%s?%s", merchantWallet, query.Encode())
+	qrURL := "https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=" + url.QueryEscape(solanaPayURL)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"reference":    reference,
+		"solanaPayUrl": solanaPayURL,
+		"qrImageUrl":   qrURL,
+		"network":      networkFromMint(),
+	})
+}
+
+func V1DetectPayment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/payment-sessions/"))
+	id = strings.TrimSuffix(id, "/detect")
+	id = strings.TrimSuffix(id, "/")
+
+	var reference, merchantWallet, state string
+	var amount int64
+	err := database.DB.QueryRow(`
+		SELECT reference::text, merchant_wallet, amount_atomic, state
+		FROM payment_sessions
+		WHERE id = $1::uuid
+	`, id).Scan(&reference, &merchantWallet, &amount, &state)
+	if err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if state == "paid" {
+		resp, _ := getCheckoutStatusByReference(reference)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	redisKey := fmt.Sprintf("invoice:%s", reference)
+	invoiceData, _ := database.RDB.HGetAll(database.Ctx, redisKey).Result()
+	if len(invoiceData) == 0 {
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
+
+	signature, senderWallet, detectErr := watcher.DetectSignatureByReferenceForMerchant(reference, amount, merchantWallet)
+	if detectErr != nil {
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending", "message": detectErr.Error()})
+		return
+	}
+	if strings.TrimSpace(invoiceData["wallet_address"]) == "" && senderWallet != "" {
+		invoiceData["wallet_address"] = senderWallet
+	}
+	if err := finalizePaidCheckout(reference, signature, invoiceData, amount); err != nil {
+		http.Error(w, "failed to finalize payment", http.StatusBadRequest)
+		return
+	}
+	_, _ = database.DB.Exec(`INSERT INTO payment_attempts(session_id, signature, status) VALUES ($1::uuid,$2,'paid')`, id, signature)
+	_, _ = database.DB.Exec(`UPDATE payment_sessions SET state='paid', signature=$2, updated_at=NOW() WHERE id=$1::uuid`, id, signature)
+	_ = database.RDB.Del(database.Ctx, redisKey).Err()
+
+	resp, _ := getCheckoutStatusByReference(reference)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func V1PaymentSessionsSubroutes(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	if strings.HasSuffix(p, "/status") {
@@ -351,6 +451,14 @@ func V1PaymentSessionsSubroutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(p, "/verify") {
 		V1VerifyPaymentSession(w, r)
+		return
+	}
+	if strings.HasSuffix(p, "/qr") {
+		V1GetQrSession(w, r)
+		return
+	}
+	if strings.HasSuffix(p, "/detect") {
+		V1DetectPayment(w, r)
 		return
 	}
 	http.Error(w, "Not found", http.StatusNotFound)

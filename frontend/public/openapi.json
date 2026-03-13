@@ -694,6 +694,52 @@
           "409": { "description": "Paid sessions cannot be cancelled." }
         }
       }
+    },
+    "/v1/payment-sessions/{sessionId}/qr": {
+      "post": {
+        "operationId": "getV1QrSession",
+        "summary": "Get QR payment payload",
+        "description": "Returns Solana Pay URL and QR image URL for headless QR-based payment experiences.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "QR payload generated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reference": { "type": "string", "format": "uuid" },
+                    "solanaPayUrl": { "type": "string" },
+                    "qrImageUrl": { "type": "string" },
+                    "network": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Session not found." },
+          "409": { "description": "Session is not payable." }
+        }
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/detect": {
+      "post": {
+        "operationId": "detectV1Payment",
+        "summary": "Detect QR payment on-chain",
+        "description": "Poll endpoint that detects matching payment by reference, finalizes checkout when found, and returns paid status.",
+        "security": [{ "AgentSignature": [] }, { "SessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "Payment detected and finalized.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CheckoutStatusResponse" } } }
+          },
+          "202": { "description": "Still pending confirmation." },
+          "404": { "description": "Session not found or expired." }
+        }
+      }
     }
   }
 }
