@@ -675,6 +675,31 @@ export default function Home() {
     }
   };
 
+  const focusEventFormField = (field: string) => {
+    if (field === "merchantWallet" || field === "amountUsdc") {
+      setDetailTab("checkoutForm");
+      setCheckoutFormAccordionOpen(true);
+      setShowCheckoutFormSection(true);
+    } else {
+      setDetailTab("info");
+    }
+
+    window.setTimeout(() => {
+      const el = document.querySelector(`[data-error-field="${field}"]`) as
+        | HTMLElement
+        | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      if ("focus" in el) {
+        try {
+          (el as HTMLInputElement | HTMLSelectElement).focus();
+        } catch {
+          // no-op
+        }
+      }
+    }, 120);
+  };
+
   const validateEventForm = () => {
     const nextErrors: Record<string, string> = {};
     if (!eventSource.trim()) {
@@ -704,9 +729,11 @@ export default function Home() {
 
     setEventFormErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
+      const firstField = Object.keys(nextErrors)[0];
       const msg = Object.values(nextErrors)[0];
       setError(msg);
       void message.error(msg);
+      focusEventFormField(firstField);
       return false;
     }
     setError("");
@@ -1049,6 +1076,7 @@ export default function Home() {
               Event source <span className="text-rose-600">*</span>
             </span>
             <select
+              data-error-field="eventSource"
               className={`border rounded-lg px-3 py-2 w-full ${
                 eventFormErrors.eventSource ? "border-rose-500" : ""
               }`}
@@ -1078,6 +1106,7 @@ export default function Home() {
               </span>
               <div className="flex gap-2">
                 <input
+                  data-error-field="sourceUrl"
                   className={`border rounded-lg px-3 py-2 w-full disabled:bg-slate-100 ${
                     eventFormErrors.sourceUrl ? "border-rose-500" : ""
                   }`}
@@ -1112,6 +1141,7 @@ export default function Home() {
               Event title <span className="text-rose-600">*</span>
             </span>
             <input
+              data-error-field="title"
               className={`border rounded-lg px-3 py-2 w-full ${
                 eventFormErrors.title ? "border-rose-500" : ""
               }`}
@@ -1156,6 +1186,7 @@ export default function Home() {
               Checkout expires at <span className="text-rose-600">*</span>
             </span>
             <input
+              data-error-field="checkoutExpiresAt"
               className={`border rounded-lg px-3 py-2 w-full ${
                 eventFormErrors.checkoutExpiresAt ? "border-rose-500" : ""
               }`}
@@ -1202,7 +1233,7 @@ export default function Home() {
 
       <section className="rounded-lg border border-slate-200 p-3 space-y-3">
         <h4 className="text-sm font-semibold text-slate-700">Event image</h4>
-        <div className="text-sm">
+        <div className="text-sm" data-error-field="eventImageUrl">
           <span className="block mb-1 font-medium">
             Event image (square crop, JPG/PNG/WEBP, max 2MB)
           </span>
@@ -1266,6 +1297,7 @@ export default function Home() {
             Merchant wallet address <span className="text-rose-600">*</span>
           </span>
           <input
+            data-error-field="merchantWallet"
             className={`border rounded-lg px-3 py-2 w-full font-mono text-xs ${
               eventFormErrors.merchantWallet ? "border-rose-500" : ""
             }`}
@@ -1287,6 +1319,7 @@ export default function Home() {
             USDC amount <span className="text-rose-600">*</span>
           </span>
           <input
+            data-error-field="amountUsdc"
             className={`border rounded-lg px-3 py-2 w-full ${
               eventFormErrors.amountUsdc ? "border-rose-500" : ""
             }`}
