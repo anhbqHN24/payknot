@@ -3,13 +3,20 @@
   "description": "Hosted event checkout/payment service for Solana USDC deposits with event management, participant checkout, and payment verification APIs.",
   "service_url": "https://pay.crea8r.xyz",
   "auth": {
-    "type": "ed25519-request-signature",
-    "headers": [
-      "X-Agent-Id",
-      "X-Agent-Timestamp",
-      "X-Agent-Signature"
-    ],
-    "canonical": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
+    "type": "multi-mode",
+    "modes": [
+      {
+        "name": "ed25519-request-signature",
+        "headers": ["X-Agent-Id", "X-Agent-Timestamp", "X-Agent-Signature"],
+        "canonical": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
+      },
+      {
+        "name": "nonce-jwt",
+        "nonce_endpoint": "/api/agent/auth/nonce",
+        "token_endpoint": "/api/agent/auth/token",
+        "bearer_usage": ["/api/agent/checkout/create"]
+      }
+    ]
   },
   "content_types": [
     "application/json",
@@ -20,7 +27,9 @@
     "create-checkout-invoice",
     "confirm-payment",
     "check-payment-status",
-    "manage-agent-keys"
+    "manage-agent-keys",
+    "nonce-jwt-agent-auth",
+    "automated-checkout-settlement"
   ],
   "docs": {
     "openapi": "https://pay.crea8r.xyz/openapi.json",

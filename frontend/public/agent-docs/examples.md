@@ -1,6 +1,15 @@
 # Agent Integration Examples
 
-## 1) Happy path: create event (signed)
+## 1) Happy path: agent runtime auth (nonce -> JWT)
+
+1. `GET /api/agent/auth/nonce?agent_pubkey=<base58_pubkey>`
+2. Sign returned nonce with Ed25519 private key
+3. `POST /api/agent/auth/token`
+4. Store `access_token` and send as `Authorization: Bearer ...`
+
+Expected result: bearer token ready for `/api/agent/checkout/create`.
+
+## 1b) Happy path: create event (signed mode)
 
 1. Build JSON body for `POST /api/events`.
 2. Compute canonical string:
@@ -46,7 +55,24 @@ Expected result: state transitions to `paid` and response includes receipt/refer
 - Retry same signed request.
 - Expected: `401 Unauthorized`
 
-## 5) Failure path: no completed transaction
+## 5) Happy path: automated settlement call (JWT mode)
+
+1. Ensure valid bearer token from nonce flow.
+2. `POST /api/agent/checkout/create` with body:
+   - `recipient`
+   - `amount_usdc`
+   - `memo`
+   - optional `event_id`
+3. On success receive:
+   - `tx_signature`
+   - `explorer_url`
+
+## 6) Failure path: policy rejection
+
+- Send amount > 500 USDC or invalid recipient.
+- Expected: `403` policy rejection, do not retry automatically.
+
+## 7) Failure path: no completed transaction
 
 - Call participant status check for unknown participant.
 - Expected: not-found/negative status response (do not assume paid).

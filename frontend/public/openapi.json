@@ -740,6 +740,123 @@
           "404": { "description": "Session not found or expired." }
         }
       }
+    },
+    "/agent/auth/nonce": {
+      "get": {
+        "operationId": "getAgentAuthNonce",
+        "summary": "Get nonce challenge for agent login",
+        "description": "Returns one-time nonce challenge for agent pubkey authentication.",
+        "parameters": [
+          {
+            "name": "agent_pubkey",
+            "in": "query",
+            "required": true,
+            "description": "Agent Ed25519 public key in base58.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Nonce issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nonce": { "type": "string" },
+                    "expires_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing/invalid pubkey." }
+        }
+      }
+    },
+    "/agent/auth/token": {
+      "post": {
+        "operationId": "createAgentAuthToken",
+        "summary": "Exchange signed nonce for JWT",
+        "description": "Verifies nonce signature and returns bearer token for settlement automation endpoints.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["agent_pubkey", "nonce", "signature"],
+                "properties": {
+                  "agent_pubkey": { "type": "string", "description": "Agent Ed25519 public key in base58." },
+                  "nonce": { "type": "string", "description": "Nonce from /agent/auth/nonce." },
+                  "signature": { "type": "string", "description": "Base58 signature of nonce by agent private key." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bearer token issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "token_type": { "type": "string", "example": "Bearer" },
+                    "expires_in": { "type": "integer", "example": 86400 }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Nonce/signature invalid." }
+        }
+      }
+    },
+    "/agent/checkout/create": {
+      "post": {
+        "operationId": "createAutomatedCheckout",
+        "summary": "Create automated checkout settlement",
+        "description": "Policy-gated automated settlement endpoint. Requires Authorization: Bearer <agent_jwt> and returns tx signature on success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["recipient", "amount_usdc", "memo"],
+                "properties": {
+                  "event_id": { "type": "integer", "format": "int64" },
+                  "recipient": { "type": "string", "description": "Recipient Solana wallet (base58)." },
+                  "amount_usdc": { "type": "number", "description": "USDC amount in decimal units.", "example": 10.5 },
+                  "memo": { "type": "string", "description": "Payment memo." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settlement accepted/confirmed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tx_signature": { "type": "string" },
+                    "explorer_url": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing/invalid JWT." },
+          "403": { "description": "Policy rejected." },
+          "500": { "description": "Settlement backend unavailable." }
+        }
+      }
     }
   }
 }

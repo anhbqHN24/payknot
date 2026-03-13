@@ -4,13 +4,18 @@
   "docs_index": "https://pay.crea8r.xyz/agent-docs/INDEX.md",
   "openapi": "https://pay.crea8r.xyz/openapi.json",
   "auth": {
-    "mode": "ed25519-request-signature",
-    "headers": [
-      "X-Agent-Id",
-      "X-Agent-Timestamp",
-      "X-Agent-Signature"
-    ],
-    "canonical_string": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
+    "primary_mode": "nonce-jwt",
+    "modes": {
+      "nonce_jwt": {
+        "nonce_endpoint": "/api/agent/auth/nonce",
+        "token_endpoint": "/api/agent/auth/token",
+        "bearer_usage": ["/api/agent/checkout/create"]
+      },
+      "request_signature": {
+        "headers": ["X-Agent-Id", "X-Agent-Timestamp", "X-Agent-Signature"],
+        "canonical_string": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
+      }
+    }
   },
   "key_registry_endpoints": {
     "list": "/api/agent-keys",
@@ -23,6 +28,9 @@
     "checkout_invoice": "/api/checkout/invoice",
     "checkout_confirm": "/api/checkout/confirm",
     "checkout_status": "/api/checkout/status?reference=...",
-    "checkout_public": "/api/checkout/{slug}"
+    "checkout_public": "/api/checkout/{slug}",
+    "agent_nonce": "/api/agent/auth/nonce",
+    "agent_token": "/api/agent/auth/token",
+    "agent_checkout_create": "/api/agent/checkout/create"
   }
 }
