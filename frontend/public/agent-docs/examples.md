@@ -20,14 +20,15 @@ POST
 
 Expected result: `200` with event id/slug/checkoutUrl.
 
-## 2) Happy path: participant checkout payment
+## 2) Happy path: participant checkout payment (headless v1)
 
-1. `POST /api/checkout/invoice`
-2. User pays through wallet or QR route.
-3. `POST /api/checkout/confirm`
-4. Poll `GET /api/checkout/status?reference=...`
+1. `POST /api/v1/payment-sessions`
+2. `POST /api/v1/payment-sessions/{id}/wallet-instructions`
+3. Agent/user executes payment off-chain wallet action.
+4. `POST /api/v1/payment-sessions/{id}/submit-signature`
+5. Poll `GET /api/v1/payment-sessions/{id}/status`
 
-Expected result: status transitions to `paid` and receipt contains reference/signature metadata.
+Expected result: state transitions to `paid` and response includes receipt/reference metadata.
 
 ## 3) Failure path: invalid signature
 

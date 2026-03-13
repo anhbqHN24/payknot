@@ -45,7 +45,23 @@ Base: `/api`
   - body: `{ agentId }`
   - revokes an agent key
 
-## Participant Checkout (public)
+## Headless v1 Payment Sessions (auth or agent signature)
+- `POST /v1/payment-sessions`
+  - body: `{ eventId, paymentMethod, walletAddress?, participantData }`
+  - creates server-owned payment session + reference
+- `GET /v1/payment-sessions/{sessionId}/status`
+  - returns session state
+- `POST /v1/payment-sessions/{sessionId}/wallet-instructions`
+  - returns transfer instructions (`reference`, `merchantWallet`, `amountAtomic`, `mint`)
+- `POST /v1/payment-sessions/{sessionId}/submit-signature`
+  - body: `{ signature }`
+  - verifies and finalizes payment
+- `POST /v1/payment-sessions/{sessionId}/verify`
+  - verifies existing submitted signature/status
+- `POST /v1/payment-sessions/{sessionId}/cancel`
+  - cancels unpaid session
+
+## Participant Checkout (legacy public)
 - `GET /checkout/{slug}`
   - returns event checkout metadata
 - `POST /checkout/invoice`

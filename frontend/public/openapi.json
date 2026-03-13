@@ -18,6 +18,27 @@
     }
   },
   "paths": {
+    "/v1/payment-sessions": {
+      "post": {
+        "summary": "Create server-owned payment session",
+        "security": [{ "AgentSignature": [] }]
+      }
+    },
+    "/v1/payment-sessions/{sessionId}/status": {
+      "get": { "summary": "Get payment session status", "security": [{ "AgentSignature": [] }] }
+    },
+    "/v1/payment-sessions/{sessionId}/wallet-instructions": {
+      "post": { "summary": "Get wallet payment instructions", "security": [{ "AgentSignature": [] }] }
+    },
+    "/v1/payment-sessions/{sessionId}/submit-signature": {
+      "post": { "summary": "Submit tx signature and finalize", "security": [{ "AgentSignature": [] }] }
+    },
+    "/v1/payment-sessions/{sessionId}/verify": {
+      "post": { "summary": "Verify submitted signature/status", "security": [{ "AgentSignature": [] }] }
+    },
+    "/v1/payment-sessions/{sessionId}/cancel": {
+      "post": { "summary": "Cancel unpaid session", "security": [{ "AgentSignature": [] }] }
+    },
     "/events": {
       "get": {
         "summary": "List events for current owner identity",
