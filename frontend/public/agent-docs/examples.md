@@ -23,10 +23,15 @@ Expected result: `200` with event id/slug/checkoutUrl.
 ## 2) Happy path: participant checkout payment (headless v1)
 
 1. `POST /api/v1/payment-sessions`
-2. `POST /api/v1/payment-sessions/{id}/wallet-instructions`
-3. Agent/user executes payment off-chain wallet action.
-4. `POST /api/v1/payment-sessions/{id}/submit-signature`
-5. Poll `GET /api/v1/payment-sessions/{id}/status`
+2. Wallet path:
+   - `POST /api/v1/payment-sessions/{id}/wallet-instructions`
+   - execute transfer in wallet
+   - `POST /api/v1/payment-sessions/{id}/submit-signature`
+3. QR path:
+   - `POST /api/v1/payment-sessions/{id}/qr`
+   - render `qrImageUrl`
+   - poll `POST /api/v1/payment-sessions/{id}/detect`
+4. Poll `GET /api/v1/payment-sessions/{id}/status`
 
 Expected result: state transitions to `paid` and response includes receipt/reference metadata.
 

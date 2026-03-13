@@ -23,6 +23,8 @@ Core implementation docs:
 Task-oriented docs:
 - [auth.md](./auth.md)
 - [examples.md](./examples.md)
+- [sdk-typescript.md](./sdk-typescript.md)
+- [sdk-python.md](./sdk-python.md)
 
 Notes:
 - Host event-management endpoints support user-session auth and agent signature auth.

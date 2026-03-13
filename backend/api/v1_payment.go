@@ -1,6 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,6 +60,14 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 	req.PaymentMethod = strings.TrimSpace(req.PaymentMethod)
 	req.WalletAddress = strings.TrimSpace(req.WalletAddress)
 	req.Slug = strings.TrimSpace(req.Slug)
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idemKey != "" {
+		if b, ok := loadIdempotentResponse(ownerEmail, idemKey, "v1:create-payment-session"); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
+			return
+		}
+	}
 
 	var slug string
 	var amount int64
@@ -137,22 +149,32 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 		)
 		VALUES ($1::uuid,$2,$3,$4::jsonb,$5,$6,'awaiting_payment',$7::uuid,$8,$9,$10,$11,$12)
 	`, sessionID, eventID, ownerEmail, string(participantJSON), req.WalletAddress, req.PaymentMethod,
-		reference, amount, usdcMintAddress(), merchantWallet, strings.TrimSpace(r.Header.Get("Idempotency-Key")), expiresAt)
+		reference, amount, usdcMintAddress(), merchantWallet, idemKey, expiresAt)
 	if err != nil {
 		http.Error(w, "Failed to persist session", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(V1PaymentSessionResponse{
-		SessionID:    sessionID,
-		Reference:    reference,
-		State:        "awaiting_payment",
+	resp := V1PaymentSessionResponse{
+		SessionID:     sessionID,
+		Reference:     reference,
+		State:         "awaiting_payment",
 		PaymentMethod: req.PaymentMethod,
-		AmountAtomic: amount,
-		Mint:         usdcMintAddress(),
-		ExpiresAt:    expiresAt.UTC().Format(time.RFC3339),
+		AmountAtomic:  amount,
+		Mint:          usdcMintAddress(),
+		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+	}
+	if idemKey != "" {
+		_ = saveIdempotentResponse(ownerEmail, idemKey, "v1:create-payment-session", resp)
+	}
+	emitPaymentWebhook("payment.pending", map[string]interface{}{
+		"sessionId": sessionID,
+		"reference": reference,
+		"state":     "awaiting_payment",
+		"method":    req.PaymentMethod,
 	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func V1GetPaymentSessionStatus(w http.ResponseWriter, r *http.Request) {
@@ -235,17 +257,26 @@ func V1SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reference, merchantWallet, state string
+	var reference, merchantWallet, state, ownerEmail string
 	var amount int64
 	err := database.DB.QueryRow(`
-		SELECT reference::text, merchant_wallet, amount_atomic, state
+		SELECT reference::text, merchant_wallet, amount_atomic, state, owner_email
 		FROM payment_sessions
 		WHERE id = $1::uuid
-	`, id).Scan(&reference, &merchantWallet, &amount, &state)
+	`, id).Scan(&reference, &merchantWallet, &amount, &state, &ownerEmail)
 	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idemKey != "" {
+		if b, ok := loadIdempotentResponse(ownerEmail, idemKey, "v1:submit-signature"); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
+			return
+		}
+	}
+
 	if state != "awaiting_payment" && state != "verifying" {
 		http.Error(w, "session cannot accept signature", http.StatusConflict)
 		return
@@ -261,12 +292,14 @@ func V1SubmitSignature(w http.ResponseWriter, r *http.Request) {
 	if err := watcher.VerifyTransactionForMerchant(reference, req.Signature, amount, merchantWallet); err != nil {
 		_, _ = database.DB.Exec(`INSERT INTO payment_attempts(session_id, signature, status, error_reason) VALUES ($1::uuid,$2,'failed',$3)`, id, req.Signature, truncateErrorMessage(err.Error(), 500))
 		_, _ = database.DB.Exec(`UPDATE payment_sessions SET state='failed', updated_at=NOW() WHERE id=$1::uuid`, id)
+		emitPaymentWebhook("payment.failed", map[string]interface{}{"sessionId": id, "reference": reference, "reason": err.Error()})
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := finalizePaidCheckout(reference, req.Signature, invoiceData, amount); err != nil {
 		_, _ = database.DB.Exec(`INSERT INTO payment_attempts(session_id, signature, status, error_reason) VALUES ($1::uuid,$2,'failed',$3)`, id, req.Signature, truncateErrorMessage(err.Error(), 500))
 		_, _ = database.DB.Exec(`UPDATE payment_sessions SET state='failed', updated_at=NOW() WHERE id=$1::uuid`, id)
+		emitPaymentWebhook("payment.failed", map[string]interface{}{"sessionId": id, "reference": reference, "reason": "finalize_failed"})
 		http.Error(w, "failed to finalize payment", http.StatusInternalServerError)
 		return
 	}
@@ -275,6 +308,10 @@ func V1SubmitSignature(w http.ResponseWriter, r *http.Request) {
 	_ = database.RDB.Del(database.Ctx, redisKey).Err()
 
 	status, _ := getCheckoutStatusByReference(reference)
+	if idemKey != "" {
+		_ = saveIdempotentResponse(ownerEmail, idemKey, "v1:submit-signature", status)
+	}
+	emitPaymentWebhook("payment.paid", map[string]interface{}{"sessionId": id, "reference": reference, "signature": req.Signature})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(status)
 }
@@ -288,11 +325,19 @@ func V1CancelPaymentSession(w http.ResponseWriter, r *http.Request) {
 	id = strings.TrimSuffix(id, "/cancel")
 	id = strings.TrimSuffix(id, "/")
 	var reference string
-	var state string
-	err := database.DB.QueryRow(`SELECT reference::text, state FROM payment_sessions WHERE id=$1::uuid`, id).Scan(&reference, &state)
+	var state, ownerEmail string
+	err := database.DB.QueryRow(`SELECT reference::text, state, owner_email FROM payment_sessions WHERE id=$1::uuid`, id).Scan(&reference, &state, &ownerEmail)
 	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
+	}
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idemKey != "" {
+		if b, ok := loadIdempotentResponse(ownerEmail, idemKey, "v1:cancel-session"); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
+			return
+		}
 	}
 	if state == "paid" {
 		http.Error(w, "paid session cannot be cancelled", http.StatusConflict)
@@ -301,8 +346,13 @@ func V1CancelPaymentSession(w http.ResponseWriter, r *http.Request) {
 	_, _ = database.DB.Exec(`UPDATE payment_sessions SET state='cancelled', updated_at=NOW() WHERE id=$1::uuid`, id)
 	_, _ = database.DB.Exec(`DELETE FROM event_checkouts WHERE reference = $1 AND signature IS NULL AND status = 'pending_payment'`, reference)
 	_ = database.RDB.Del(database.Ctx, fmt.Sprintf("invoice:%s", reference)).Err()
+	resp := map[string]bool{"ok": true}
+	if idemKey != "" {
+		_ = saveIdempotentResponse(ownerEmail, idemKey, "v1:cancel-session", resp)
+	}
+	emitPaymentWebhook("payment.cancelled", map[string]interface{}{"sessionId": id, "reference": reference})
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func V1VerifyPaymentSession(w http.ResponseWriter, r *http.Request) {
@@ -411,6 +461,7 @@ func V1DetectPayment(w http.ResponseWriter, r *http.Request) {
 
 	signature, senderWallet, detectErr := watcher.DetectSignatureByReferenceForMerchant(reference, amount, merchantWallet)
 	if detectErr != nil {
+		emitPaymentWebhook("payment.pending", map[string]interface{}{"sessionId": id, "reference": reference, "reason": detectErr.Error()})
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending", "message": detectErr.Error()})
 		return
@@ -427,6 +478,7 @@ func V1DetectPayment(w http.ResponseWriter, r *http.Request) {
 	_ = database.RDB.Del(database.Ctx, redisKey).Err()
 
 	resp, _ := getCheckoutStatusByReference(reference)
+	emitPaymentWebhook("payment.paid", map[string]interface{}{"sessionId": id, "reference": reference, "signature": signature})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -462,6 +514,70 @@ func V1PaymentSessionsSubroutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "Not found", http.StatusNotFound)
+}
+
+func loadIdempotentResponse(ownerEmail, idemKey, endpoint string) ([]byte, bool) {
+	if strings.TrimSpace(ownerEmail) == "" || strings.TrimSpace(idemKey) == "" || strings.TrimSpace(endpoint) == "" {
+		return nil, false
+	}
+	var raw string
+	err := database.DB.QueryRow(`
+		SELECT response_json::text
+		FROM idempotency_records
+		WHERE owner_email = $1 AND idem_key = $2 AND endpoint = $3
+	`, ownerEmail, idemKey, endpoint).Scan(&raw)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil, false
+	}
+	return []byte(raw), true
+}
+
+func saveIdempotentResponse(ownerEmail, idemKey, endpoint string, payload interface{}) error {
+	if strings.TrimSpace(ownerEmail) == "" || strings.TrimSpace(idemKey) == "" || strings.TrimSpace(endpoint) == "" {
+		return nil
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = database.DB.Exec(`
+		INSERT INTO idempotency_records(owner_email, idem_key, endpoint, response_json)
+		VALUES ($1,$2,$3,$4::jsonb)
+		ON CONFLICT(owner_email, idem_key, endpoint)
+		DO UPDATE SET response_json = EXCLUDED.response_json
+	`, ownerEmail, idemKey, endpoint, string(b))
+	return err
+}
+
+func emitPaymentWebhook(event string, payload map[string]interface{}) {
+	webhookURL := strings.TrimSpace(os.Getenv("PAYKNOT_WEBHOOK_URL"))
+	if webhookURL == "" || strings.TrimSpace(event) == "" {
+		return
+	}
+	body := map[string]interface{}{
+		"event":     event,
+		"occurredAt": time.Now().UTC().Format(time.RFC3339),
+		"payload":   payload,
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if secret := strings.TrimSpace(os.Getenv("PAYKNOT_WEBHOOK_SECRET")); secret != "" {
+		h := hmac.New(sha256.New, []byte(secret))
+		_, _ = h.Write(b)
+		req.Header.Set("X-Payknot-Signature", hex.EncodeToString(h.Sum(nil)))
+	}
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil && resp != nil {
+		_ = resp.Body.Close()
+	}
 }
 
 func usdcMintAddress() string {
