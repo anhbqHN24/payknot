@@ -36,6 +36,11 @@ func main() {
 	http.HandleFunc("/api/checkout/status", api.GetCheckoutStatus)
 	http.HandleFunc("/api/checkout/", api.GetCheckoutBySlug)
 
+	// Agent nonce/JWT auth + settlement automation
+	http.HandleFunc("/api/agent/auth/nonce", api.AgentAuthNonce)
+	http.HandleFunc("/api/agent/auth/token", api.AgentAuthToken)
+	http.HandleFunc("/api/agent/checkout/create", middleware.RequireAgentJWT(api.AgentCheckoutCreate))
+
 	// Headless v1 API (server-owned session state)
 	http.HandleFunc("/api/v1/payment-sessions", api.V1CreatePaymentSession)
 	http.HandleFunc("/api/v1/payment-sessions/", api.V1PaymentSessionsSubroutes)

@@ -45,6 +45,17 @@ Base: `/api`
   - body: `{ agentId }`
   - revokes an agent key
 
+## Agent Runtime Auth + Settlement Automation
+- `GET /agent/auth/nonce?agent_pubkey=<base58>`
+  - returns nonce challenge + expiry
+- `POST /agent/auth/token`
+  - body: `{ agent_pubkey, nonce, signature }`
+  - returns `{ access_token, token_type, expires_in }` (JWT)
+- `POST /agent/checkout/create`
+  - auth: `Authorization: Bearer <agent_jwt>`
+  - body: `{ event_id, recipient, amount_usdc, memo }`
+  - returns `{ tx_signature, explorer_url }` on success
+
 ## Headless v1 Payment Sessions (auth or agent signature)
 - `POST /v1/payment-sessions`
   - body: `{ eventId, paymentMethod, walletAddress?, participantData }`
