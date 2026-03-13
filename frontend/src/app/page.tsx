@@ -1264,24 +1264,32 @@ export default function Home() {
             Event image (square crop, JPG/PNG/WEBP, max 2MB)
           </span>
           <div ref={uploadTriggerRef} className="relative z-0 overflow-hidden">
-            <ImgCrop rotationSlider cropShape="rect" aspect={1} showGrid>
-              {isMobile ? (
-                <Upload {...uploadProps} showUploadList={false}>
-                  <div className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-sm">
-                    Tap to upload event image
-                  </div>
-                </Upload>
-              ) : (
-                <Upload.Dragger
-                  {...uploadProps}
-                  multiple={false}
-                  showUploadList={false}
-                  className="!w-full !min-h-[132px] !p-3"
-                >
-                  <p className="text-sm font-medium">Drag & drop event image here, or click to upload</p>
-                  <p className="text-xs text-slate-500">Only 1 image. Crop is required before upload.</p>
-                </Upload.Dragger>
-              )}
+            <ImgCrop
+              rotationSlider
+              cropShape="rect"
+              aspect={1}
+              showGrid
+              quality={1}
+              modalTitle="Crop event image"
+              modalOk="Use image"
+              modalCancel="Cancel"
+            >
+              <Upload.Dragger
+                {...uploadProps}
+                multiple={false}
+                showUploadList={false}
+                openFileDialogOnClick
+                className={`!w-full !p-3 ${isMobile ? "!min-h-[88px]" : "!min-h-[132px]"}`}
+              >
+                <p className="text-sm font-medium">
+                  {isMobile
+                    ? "Tap to upload and crop event image"
+                    : "Drag & drop event image here, or click to upload"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Only 1 image. Crop is required before upload.
+                </p>
+              </Upload.Dragger>
             </ImgCrop>
           </div>
           {importedLumaImageURL && (
