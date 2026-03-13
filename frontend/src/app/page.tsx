@@ -216,21 +216,36 @@ export default function Home() {
   const [loadingCheckouts, setLoadingCheckouts] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+
     void (async () => {
       try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
+        const res = await fetch("/api/auth/me", {
+          credentials: "include",
+          signal: controller.signal,
+          cache: "no-store",
+        });
         if (!res.ok) {
-          setCurrentUser(null);
+          if (!cancelled) setCurrentUser(null);
           return;
         }
         const data = await res.json();
-        setCurrentUser(data.user as AppUser);
+        if (!cancelled) setCurrentUser(data.user as AppUser);
       } catch {
-        setCurrentUser(null);
+        if (!cancelled) setCurrentUser(null);
       } finally {
-        setAuthLoading(false);
+        window.clearTimeout(timeout);
+        if (!cancelled) setAuthLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
