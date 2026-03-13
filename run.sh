@@ -91,7 +91,7 @@ if [ ! -f .env.local ]; then
     else 
         # Fallback if example is named differently or missing
         touch .env.local
-        echo "NEXT_PUBLIC_SOLANA_RPC=https://api.devnet.solana.com" >> .env.local
+        echo "NEXT_PUBLIC_SOLANA_RPC=https://api.mainnet-beta.solana.com" >> .env.local
     fi
 else
     echo -e "✓ .env.local exists."

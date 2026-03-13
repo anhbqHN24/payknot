@@ -213,7 +213,7 @@
         "properties": {
           "reference": { "type": "string", "format": "uuid", "description": "Session/payment reference UUID." },
           "amountRaw": { "type": "integer", "description": "USDC amount in atomic units (6 decimals)." },
-          "network": { "type": "string", "description": "Solana network identifier.", "example": "devnet" }
+          "network": { "type": "string", "description": "Solana network identifier.", "example": "mainnet-beta" }
         }
       },
       "ConfirmCheckoutPaymentRequest": {

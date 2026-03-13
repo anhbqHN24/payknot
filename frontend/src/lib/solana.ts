@@ -17,7 +17,7 @@ import {
 // ----------------------------------------------------------------------
 export const USDC_MINT_ADDRESS = new PublicKey(
   process.env.NEXT_PUBLIC_USDC_MINT ||
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
 /** Returns true if the string is a valid Solana base58 public key. */
 export function isValidSolanaAddress(value: string): boolean {

@@ -10,7 +10,7 @@ CREATE TABLE "events" (
   "organizer_name" varchar NOT NULL DEFAULT '',
   "merchant_wallet" varchar NOT NULL,
   "amount_usdc" bigint NOT NULL,
-  "network" varchar NOT NULL DEFAULT 'devnet',
+  "network" varchar NOT NULL DEFAULT 'mainnet-beta',
   "status" varchar NOT NULL DEFAULT 'active',
   "created_at" timestamptz NOT NULL DEFAULT now()
 );

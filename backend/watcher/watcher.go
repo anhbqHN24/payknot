@@ -455,7 +455,7 @@ func VerifyDirectTransferForMerchant(signature string, expectedAmount int64, mer
 // Tạo danh sách RPC (Nên để trong .env ngăn cách bởi dấu phẩy)
 func getRpcClientWithFailover() *rpc.Client {
 	primaryURL := os.Getenv("SOLANA_RPC_URL")
-	backupURL := "https://api.devnet.solana.com" // Backup public
+	backupURL := "https://api.mainnet-beta.solana.com" // Backup public
 
 	// Thử Ping RPC chính
 	client := rpc.New(primaryURL)

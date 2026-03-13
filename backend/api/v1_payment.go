@@ -584,5 +584,5 @@ func usdcMintAddress() string {
 	if v := strings.TrimSpace(os.Getenv("USDC_MINT")); v != "" {
 		return v
 	}
-	return "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+	return "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 }

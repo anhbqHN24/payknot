@@ -1599,13 +1599,7 @@ export default function Home() {
                     <td className="px-2 py-2">
                       {row.signature && (
                         <a
-                          href={
-                            (process.env.NEXT_PUBLIC_USDC_MINT ||
-                              "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU") !==
-                            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-                              ? `https://solscan.io/tx/${row.signature}`
-                              : `https://solscan.io/tx/${row.signature}?cluster=devnet`
-                          }
+                          href={`https://solscan.io/tx/${row.signature}`}
                           target="_blank"
                           rel="noreferrer"
                           className="underline text-blue-600 block mt-1"

@@ -13,7 +13,7 @@ import {
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const endpoint =
-  process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+  process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 
 export function WalletContextProvider({
   children,

@@ -274,5 +274,5 @@ func explorerFor(sig string) string {
 	if strings.TrimSpace(sig) == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://explorer.solana.com/tx/%s?cluster=devnet", sig)
+	return fmt.Sprintf("https://explorer.solana.com/tx/%s", sig)
 }

@@ -688,8 +688,8 @@ func networkFromMint() string {
 	}
 	mint := strings.TrimSpace(os.Getenv("USDC_MINT"))
 	switch mint {
-	case "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU":
-		return "devnet"
+	case "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v":
+		return "mainnet"
 	default:
 		return "mainnet"
 	}
@@ -706,5 +706,5 @@ func solscanURLForNetwork(signature string, network string) string {
 	if network == "mainnet" || network == "mainnet-beta" {
 		return fmt.Sprintf("https://solscan.io/tx/%s", signature)
 	}
-	return fmt.Sprintf("https://solscan.io/tx/%s?cluster=devnet", signature)
+	return fmt.Sprintf("https://solscan.io/tx/%s", signature)
 }
