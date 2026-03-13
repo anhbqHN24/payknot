@@ -692,22 +692,17 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    if (!detailRender) return;
-    if (eventFormErrors.merchantWallet || eventFormErrors.amountUsdc) {
-      setDetailTab("checkoutForm");
-      setCheckoutFormAccordionOpen(true);
-      setShowCheckoutFormSection(true);
-    }
-  }, [detailRender, eventFormErrors]);
-
   const focusEventFormField = (field: string) => {
-    if (field === "merchantWallet" || field === "amountUsdc") {
-      setDetailTab("checkoutForm");
-      setCheckoutFormAccordionOpen(true);
+    const isCheckoutTabField =
+      field === "merchantWallet" || field === "amountUsdc";
+
+    if (isMobile) {
+      setDetailTab(isCheckoutTabField ? "checkoutForm" : "info");
+      if (isCheckoutTabField) {
+        setCheckoutFormAccordionOpen(true);
+      }
+    } else if (isCheckoutTabField) {
       setShowCheckoutFormSection(true);
-    } else {
-      setDetailTab("info");
     }
 
     window.setTimeout(() => {
