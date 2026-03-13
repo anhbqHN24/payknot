@@ -37,8 +37,8 @@ func main() {
 	http.HandleFunc("/api/checkout/", api.GetCheckoutBySlug)
 
 	// Headless v1 API (server-owned session state)
-	http.HandleFunc("/api/v1/payment-sessions", middleware.RequireAuthOrAgentKey(api.V1CreatePaymentSession))
-	http.HandleFunc("/api/v1/payment-sessions/", middleware.RequireAuthOrAgentKey(api.V1PaymentSessionsSubroutes))
+	http.HandleFunc("/api/v1/payment-sessions", api.V1CreatePaymentSession)
+	http.HandleFunc("/api/v1/payment-sessions/", api.V1PaymentSessionsSubroutes)
 
 	log.Println("Server starting on port 8080...")
 	if err := http.ListenAndServe(":8080", nil); err != nil {

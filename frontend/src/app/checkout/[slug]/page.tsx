@@ -51,6 +51,7 @@ type CheckoutStatus = {
 type PaymentMethod = "wallet" | "qr";
 
 type PendingSession = {
+  sessionId?: string;
   reference: string;
   expiresAt: number;
   signature?: string;
@@ -119,6 +120,7 @@ function CheckoutInner() {
   const [lookupError, setLookupError] = useState("");
   const [highlightLookup, setHighlightLookup] = useState(false);
   const [highlightStep3, setHighlightStep3] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState("");
   const [reference, setReference] = useState("");
   const [statusData, setStatusData] = useState<CheckoutStatus | null>(null);
   const [showFullSignature, setShowFullSignature] = useState(false);
@@ -181,6 +183,7 @@ function CheckoutInner() {
         localStorage.removeItem(storageKey);
         return;
       }
+      setActiveSessionId(data.sessionId || "");
       setReference(data.reference);
       setSessionMethod(data.method || null);
       setPaymentMethod(data.method || "wallet");
@@ -244,6 +247,7 @@ function CheckoutInner() {
     ref: string,
     method: PaymentMethod,
     signature?: string,
+    sessionId?: string,
   ) => {
     const expiresAt = Date.now() + 10 * 60 * 1000;
     if (method === "wallet") {
@@ -252,6 +256,7 @@ function CheckoutInner() {
       setTimeLeft(null);
     }
     const payload: PendingSession = {
+      sessionId: sessionId || "",
       reference: ref,
       expiresAt,
       signature: signature || "",
@@ -262,6 +267,7 @@ function CheckoutInner() {
 
   const clearPending = () => {
     localStorage.removeItem(storageKey);
+    setActiveSessionId("");
     setTimeLeft(null);
   };
 
@@ -301,6 +307,32 @@ function CheckoutInner() {
     walletAddress: string,
     method: PaymentMethod,
   ) => {
+    const v1Res = await fetch("/api/v1/payment-sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": `${slug}-${method}-${Date.now()}`,
+      },
+      body: JSON.stringify({
+        slug,
+        walletAddress,
+        participantData,
+        paymentMethod: method,
+      }),
+    });
+    if (v1Res.ok) {
+      const data = (await v1Res.json()) as {
+        sessionId: string;
+        reference: string;
+        amountAtomic: number;
+      };
+      return {
+        sessionId: data.sessionId,
+        reference: data.reference,
+        amountRaw: data.amountAtomic,
+      };
+    }
+
     const res = await fetch("/api/checkout/invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -312,7 +344,8 @@ function CheckoutInner() {
       }),
     });
     if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as { reference: string; amountRaw: number };
+    const legacy = (await res.json()) as { reference: string; amountRaw: number };
+    return { sessionId: "", reference: legacy.reference, amountRaw: legacy.amountRaw };
   };
 
   const checkParticipantStatus = async (email: string) => {
@@ -331,10 +364,13 @@ function CheckoutInner() {
     setLoadingPay(true);
     setError("");
     let createdReference = "";
+    let createdSessionId = "";
     let sentSignature = "";
     try {
       const created = await createInvoice(publicKey.toBase58(), "wallet");
       createdReference = created.reference;
+      createdSessionId = created.sessionId || "";
+      setActiveSessionId(createdSessionId);
       setReference(created.reference);
       setStatusData({
         reference: created.reference,
@@ -346,7 +382,7 @@ function CheckoutInner() {
       });
       setSessionMethod("wallet");
       setPaymentMethod("wallet");
-      persistPending(created.reference, "wallet");
+      persistPending(created.reference, "wallet", "", created.sessionId);
 
       const transaction = await createUsdcTransfer(
         connection,
@@ -360,26 +396,45 @@ function CheckoutInner() {
         maxRetries: 5,
       });
       sentSignature = signature;
-      persistPending(created.reference, "wallet", signature);
+      persistPending(created.reference, "wallet", signature, created.sessionId);
 
       const confirmed = await connection.confirmTransaction(signature, "confirmed");
       if (confirmed.value.err) throw new Error("Transaction failed on-chain");
 
-      const confirmRes = await fetch("/api/checkout/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reference: created.reference, signature }),
-      });
+      let confirmRes: Response;
+      if (created.sessionId) {
+        confirmRes = await fetch(
+          `/api/v1/payment-sessions/${created.sessionId}/submit-signature`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ signature }),
+          },
+        );
+      } else {
+        confirmRes = await fetch("/api/checkout/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference: created.reference, signature }),
+        });
+      }
       if (!confirmRes.ok) throw new Error(await confirmRes.text());
       const paid = (await confirmRes.json()) as CheckoutStatus;
       hydrateStatus(paid);
     } catch (err) {
       if (createdReference && !sentSignature) {
-        await fetch("/api/checkout/cancel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reference: createdReference }),
-        });
+        if (createdSessionId) {
+          await fetch(`/api/v1/payment-sessions/${createdSessionId}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        } else {
+          await fetch("/api/checkout/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reference: createdReference }),
+          });
+        }
         clearPending();
       }
       setError(err instanceof Error ? err.message : "Payment failed");
@@ -573,6 +628,7 @@ function CheckoutInner() {
     setError("");
     try {
       const created = await createInvoice("", "qr");
+      setActiveSessionId(created.sessionId || "");
       setReference(created.reference);
       setSessionMethod("qr");
       setPaymentMethod("qr");
@@ -584,7 +640,7 @@ function CheckoutInner() {
         solscanUrl: "",
         paymentMethod: "qr",
       });
-      persistPending(created.reference, "qr");
+      persistPending(created.reference, "qr", "", created.sessionId);
       openQrWindow(created.reference);
       setStep(2);
     } catch (err) {

@@ -16,6 +16,7 @@ import (
 
 type V1CreatePaymentSessionRequest struct {
 	EventID         int64                  `json:"eventId"`
+	Slug            string                 `json:"slug"`
 	PaymentMethod   string                 `json:"paymentMethod"`
 	WalletAddress   string                 `json:"walletAddress"`
 	ParticipantData map[string]interface{} `json:"participantData"`
@@ -41,9 +42,9 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	claims, ok := middleware.CurrentUser(r)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+	ownerEmail := "public_checkout"
+	if ok && strings.TrimSpace(claims.Email) != "" {
+		ownerEmail = strings.TrimSpace(claims.Email)
 	}
 
 	var req V1CreatePaymentSessionRequest
@@ -53,17 +54,28 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PaymentMethod = strings.TrimSpace(req.PaymentMethod)
 	req.WalletAddress = strings.TrimSpace(req.WalletAddress)
+	req.Slug = strings.TrimSpace(req.Slug)
 
 	var slug string
 	var amount int64
 	var merchantWallet string
 	var formJSON []byte
 	var methodsJSON []byte
-	err := database.DB.QueryRow(`
-		SELECT slug, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
-		FROM events
-		WHERE id = $1 AND status = 'active' AND owner_email = $2
-	`, req.EventID, claims.Email).Scan(&slug, &amount, &merchantWallet, &formJSON, &methodsJSON)
+	var eventID int64
+	var err error
+	if req.EventID > 0 {
+		err = database.DB.QueryRow(`
+			SELECT id, slug, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+			FROM events
+			WHERE id = $1 AND status = 'active'
+		`, req.EventID).Scan(&eventID, &slug, &amount, &merchantWallet, &formJSON, &methodsJSON)
+	} else {
+		err = database.DB.QueryRow(`
+			SELECT id, slug, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+			FROM events
+			WHERE slug = $1 AND status = 'active'
+		`, req.Slug).Scan(&eventID, &slug, &amount, &merchantWallet, &formJSON, &methodsJSON)
+	}
 	if err != nil {
 		http.Error(w, "Event not found", http.StatusNotFound)
 		return
@@ -74,7 +86,7 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := ensureParticipantEmailAvailable(req.EventID, req.ParticipantData); err != nil {
+	if err := ensureParticipantEmailAvailable(eventID, req.ParticipantData); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -106,7 +118,7 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 	invoiceData := map[string]interface{}{
 		"wallet_address":   req.WalletAddress,
 		"amount":           amount,
-		"event_id":         req.EventID,
+		"event_id":         eventID,
 		"merchant_wallet":  merchantWallet,
 		"payment_method":   req.PaymentMethod,
 		"participant_data": string(participantJSON),
@@ -123,7 +135,7 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 			reference, amount_atomic, mint, merchant_wallet, idempotency_key, expires_at
 		)
 		VALUES ($1::uuid,$2,$3,$4::jsonb,$5,$6,'awaiting_payment',$7::uuid,$8,$9,$10,$11,$12)
-	`, sessionID, req.EventID, claims.Email, string(participantJSON), req.WalletAddress, req.PaymentMethod,
+	`, sessionID, eventID, ownerEmail, string(participantJSON), req.WalletAddress, req.PaymentMethod,
 		reference, amount, usdcMintAddress(), merchantWallet, strings.TrimSpace(r.Header.Get("Idempotency-Key")), expiresAt)
 	if err != nil {
 		http.Error(w, "Failed to persist session", http.StatusInternalServerError)
