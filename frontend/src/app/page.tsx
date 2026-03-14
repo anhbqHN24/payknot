@@ -1867,7 +1867,7 @@ export default function Home() {
       <div className="mx-auto max-w-6xl px-3 md:px-4 py-4 md:py-10 space-y-4 md:space-y-6">
         <section
           ref={pageHeaderRef}
-          className={`sticky top-0 z-30 rounded-2xl bg-white/95 backdrop-blur border border-slate-200 shadow-sm p-3 md:p-6 transition-transform duration-300 ${!isMobile && sessionsHeaderPinned ? "-translate-y-[105%]" : "translate-y-0"}`}
+          className={`sticky top-0 z-30 rounded-2xl app-surface backdrop-blur border shadow-sm p-3 md:p-6 transition-transform duration-300 ${!isMobile && sessionsHeaderPinned ? "-translate-y-[105%]" : "translate-y-0"}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">

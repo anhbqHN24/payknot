@@ -23,7 +23,7 @@
   --app-surface: #0b1220;
   --app-fg: #e2e8f0;
   --app-muted: #94a3b8;
-  --app-border: #1e293b;
+  --app-border: #334155;
 }
 
 body {
@@ -61,6 +61,71 @@ body {
   background:
     radial-gradient(38rem 26rem at 15% -5%, rgba(59, 130, 246, 0.22), transparent 65%),
     radial-gradient(38rem 26rem at 85% -10%, rgba(168, 85, 247, 0.2), transparent 65%);
+}
+
+.dark .bg-white,
+.dark .bg-white\/95,
+.dark .bg-slate-50 {
+  background-color: var(--app-surface) !important;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: var(--app-border) !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: var(--app-fg) !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: var(--app-muted) !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f172a !important;
+  color: var(--app-fg) !important;
+  border-color: var(--app-border) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+.dark table thead tr {
+  background-color: #0f172a !important;
+}
+
+.dark table tbody tr {
+  border-color: var(--app-border) !important;
+}
+
+.dark .ant-table,
+.dark .ant-table-container,
+.dark .ant-table-thead > tr > th,
+.dark .ant-table-tbody > tr > td,
+.dark .ant-modal-content,
+.dark .ant-input,
+.dark .ant-input-affix-wrapper,
+.dark .ant-select-selector,
+.dark .ant-picker,
+.dark .ant-upload,
+.dark .ant-upload-drag {
+  background: #0b1220 !important;
+  color: var(--app-fg) !important;
+  border-color: var(--app-border) !important;
+}
+
+.dark .ant-message-notice-content {
+  background: #0b1220 !important;
+  color: var(--app-fg) !important;
+  border: 1px solid var(--app-border) !important;
 }
 
 .blur-mask {
