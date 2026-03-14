@@ -336,7 +336,12 @@ export default function Home() {
 
     render();
     const timer = window.setTimeout(render, 120);
-    return () => window.clearTimeout(timer);
+    const onThemeChanged = () => render();
+    window.addEventListener("theme-changed", onThemeChanged);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("theme-changed", onThemeChanged);
+    };
   }, [authLoading, currentUser, googleScriptReady, authMode]);
 
   const selectedEvent = useMemo(
@@ -471,6 +476,7 @@ export default function Home() {
   }, [currentUser]);
 
   useEffect(() => {
+    setEventFormErrors({});
     if (!selectedEvent) return;
     fillFormFromEvent(selectedEvent);
     setCheckouts([]);

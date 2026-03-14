@@ -12,6 +12,7 @@ function applyTheme(mode: ThemeMode) {
     root.classList.remove("dark");
   }
   localStorage.setItem("theme", mode);
+  window.dispatchEvent(new Event("theme-changed"));
 }
 
 export default function ThemeToggle() {
