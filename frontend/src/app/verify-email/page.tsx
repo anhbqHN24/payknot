@@ -34,7 +34,7 @@ function VerifyEmailContent() {
   }, [token]);
 
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
+    <section className="rounded-2xl app-surface border shadow-sm p-6 space-y-3">
       <h1 className="text-xl font-semibold">Email Verification</h1>
       <p
         className={`text-sm ${
@@ -56,11 +56,11 @@ function VerifyEmailContent() {
 
 export default function VerifyEmailPage() {
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="min-h-screen app-bg">
       <div className="mx-auto max-w-lg px-4 py-14">
         <Suspense
           fallback={
-            <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
+            <section className="rounded-2xl app-surface border shadow-sm p-6">
               <p className="text-sm text-slate-600">Loading verification...</p>
             </section>
           }

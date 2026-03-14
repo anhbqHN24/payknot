@@ -60,7 +60,7 @@ function ResetPasswordContent() {
   };
 
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
+    <section className="rounded-2xl app-surface border shadow-sm p-6 space-y-3">
       <h1 className="text-xl font-semibold">Reset Password</h1>
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="text-sm block">
@@ -106,11 +106,11 @@ function ResetPasswordContent() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="min-h-screen app-bg">
       <div className="mx-auto max-w-lg px-4 py-14">
         <Suspense
           fallback={
-            <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
+            <section className="rounded-2xl app-surface border shadow-sm p-6">
               <p className="text-sm text-slate-600">Loading reset form...</p>
             </section>
           }

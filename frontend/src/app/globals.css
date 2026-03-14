@@ -4,14 +4,63 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #1e293b; /* Slate 800 */
-  --primary: #e11d48; /* Rose 600 */
+  --foreground: #1e293b;
+  --primary: #e11d48;
+
+  --app-bg: #f8fafc;
+  --app-surface: #ffffff;
+  --app-fg: #0f172a;
+  --app-muted: #475569;
+  --app-border: #e2e8f0;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #e2e8f0;
+  --primary: #fb7185;
+
+  --app-bg: #020617;
+  --app-surface: #0b1220;
+  --app-fg: #e2e8f0;
+  --app-muted: #94a3b8;
+  --app-border: #1e293b;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: 'Inter', system-ui, sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.app-bg {
+  background: var(--app-bg);
+  color: var(--app-fg);
+}
+
+.app-surface {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+}
+
+.app-muted {
+  color: var(--app-muted);
+}
+
+.magic-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(40rem 30rem at 10% -10%, rgba(99, 102, 241, 0.15), transparent 60%),
+    radial-gradient(40rem 30rem at 90% -5%, rgba(236, 72, 153, 0.12), transparent 60%);
+}
+
+.dark .magic-bg {
+  background:
+    radial-gradient(38rem 26rem at 15% -5%, rgba(59, 130, 246, 0.22), transparent 65%),
+    radial-gradient(38rem 26rem at 85% -10%, rgba(168, 85, 247, 0.2), transparent 65%);
 }
 
 .blur-mask {

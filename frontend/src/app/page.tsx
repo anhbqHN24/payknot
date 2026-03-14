@@ -1711,9 +1711,9 @@ export default function Home() {
 
   if (authLoading) {
     return (
-      <main className="min-h-screen bg-slate-50 text-slate-900">
+      <main className="min-h-screen app-bg">
         <div className="mx-auto max-w-lg px-4 py-14">
-          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
+          <section className="rounded-2xl app-surface border shadow-sm p-6 space-y-3">
             <p className="text-sm text-slate-600">Checking session...</p>
             <button
               onClick={() => setAuthCheckNonce((v) => v + 1)}
@@ -1729,9 +1729,9 @@ export default function Home() {
 
   if (!currentUser) {
     return (
-      <main className="min-h-screen bg-slate-50 text-slate-900">
+      <main className="min-h-screen app-bg">
         <div className="mx-auto max-w-lg px-4 py-14">
-          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-4">
+          <section className="rounded-2xl app-surface border shadow-sm p-6 space-y-4">
             <div className="flex items-center gap-3">
               <Image
                 src="/payknot_nontext.svg"
@@ -1863,7 +1863,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="min-h-screen app-bg">
       <div className="mx-auto max-w-6xl px-3 md:px-4 py-4 md:py-10 space-y-4 md:space-y-6">
         <section
           ref={pageHeaderRef}
@@ -1970,7 +1970,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-3 md:p-6 space-y-3">
+        <section className="rounded-2xl app-surface border shadow-sm p-3 md:p-6 space-y-3">
           <div
             ref={sessionsHeaderRef}
             className="hidden md:block sticky z-20 bg-white/95 backdrop-blur rounded-lg border border-slate-200 p-3 flex-col gap-3  transition-all duration-300"
