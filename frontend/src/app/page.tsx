@@ -324,8 +324,9 @@ export default function Home() {
       const container = document.getElementById("google-login-button");
       if (!container || !window.google) return;
       container.innerHTML = "";
+      const isDark = document.documentElement.classList.contains("dark");
       window.google.accounts.id.renderButton(container, {
-        theme: "outline",
+        theme: isDark ? "filled_black" : "outline",
         size: "large",
         shape: "rectangular",
         width: 300,
@@ -1116,6 +1117,7 @@ export default function Home() {
     }
     setDetailMode("create");
     setSelectedEventID(null);
+    setEventFormErrors({});
     resetForm();
     setCheckouts([]);
     setDetailTab("info");
@@ -1129,6 +1131,7 @@ export default function Home() {
       detailCloseTimerRef.current = null;
     }
     setDetailMode("edit");
+    setEventFormErrors({});
     setSelectedEventID(eventID);
     setDetailTab("info");
     setDetailRender(true);
@@ -2092,7 +2095,7 @@ export default function Home() {
                   <button
                     key={ev.eventId}
                     onClick={() => openEditDetail(ev.eventId)}
-                    className={`text-left border rounded-xl p-2 md:p-3 transition ${selectedEventID === ev.eventId ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
+                    className={`text-left border rounded-xl p-2 md:p-3 transition ${selectedEventID === ev.eventId ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40" : "border-slate-200 bg-white dark:bg-slate-900"}`}
                   >
                     <div className="flex gap-2 md:block">
                       {ev.eventImageUrl && (
@@ -2126,7 +2129,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 -mx-3 md:mx-0 md:border-0 md:bg-transparent md:static px-3 md:px-0 py-2 flex flex-wrap items-center gap-2 pt-2">
+              <div className="sticky bottom-0 app-surface backdrop-blur border-t border-slate-200 dark:border-slate-700 -mx-3 md:mx-0 md:border-0 md:bg-transparent md:static px-3 md:px-0 py-2 flex flex-wrap items-center gap-2 pt-2">
                 <button
                   disabled={eventPage <= 1}
                   onClick={() => setEventPage((p) => Math.max(1, p - 1))}
@@ -2159,7 +2162,7 @@ export default function Home() {
 
             {isMobile ? (
               <div
-                className={`absolute inset-0 bg-white flex flex-col ${detailClosing ? "animate-panel-down-out" : "animate-panel-up-in"}`}
+                className={`absolute inset-0 app-surface flex flex-col ${detailClosing ? "animate-panel-down-out" : "animate-panel-up-in"}`}
               >
                 <div className="border-b border-slate-200 px-4 py-3 flex items-start justify-between gap-3">
                   <div>
@@ -2184,7 +2187,7 @@ export default function Home() {
                       <button
                         key={tab}
                         onClick={() => setDetailTab(tab)}
-                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300"}`}
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "bg-indigo-600 text-white border-indigo-600" : "app-surface border-slate-300 dark:border-slate-700"}`}
                       >
                         {tab === "info"
                           ? "General Info"
@@ -2228,7 +2231,7 @@ export default function Home() {
                   )}
                 </div>
 
-                <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 py-3">
+                <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 dark:border-slate-700 app-surface px-4 py-3">
                   {detailMode === "edit" && hasPaidDeposits && (
                     <p className="mb-2 text-xs text-amber-700">
                       This event already has successful deposits. Edit/Delete is
@@ -2252,7 +2255,7 @@ export default function Home() {
                         updating ||
                         (detailMode === "edit" && hasPaidDeposits)
                       }
-                      className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
+                      className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2 text-sm font-semibold disabled:opacity-60"
                     >
                       {detailMode === "create"
                         ? creating
@@ -2267,7 +2270,7 @@ export default function Home() {
               </div>
             ) : (
               <div
-                className={`absolute inset-y-0 right-0 w-[600px] bg-white border-l border-slate-200 shadow-xl flex flex-col ${detailClosing ? "animate-panel-right-out" : "animate-panel-right-in"}`}
+                className={`absolute inset-y-0 right-0 w-[600px] app-surface border-l border-slate-200 dark:border-slate-700 shadow-xl flex flex-col ${detailClosing ? "animate-panel-right-out" : "animate-panel-right-in"}`}
               >
                 <div className="border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-3">
                   <div>
@@ -2327,7 +2330,7 @@ export default function Home() {
                   </section>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-5 py-3">
+                <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 dark:border-slate-700 app-surface px-5 py-3">
                   {detailMode === "edit" && hasPaidDeposits && (
                     <p className="mb-2 text-xs text-amber-700">
                       This event already has successful deposits. Edit/Delete is
@@ -2351,7 +2354,7 @@ export default function Home() {
                         updating ||
                         (detailMode === "edit" && hasPaidDeposits)
                       }
-                      className="flex-1 rounded-lg bg-slate-900 text-white py-2 text-sm font-semibold disabled:opacity-60"
+                      className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2 text-sm font-semibold disabled:opacity-60"
                     >
                       {detailMode === "create"
                         ? creating

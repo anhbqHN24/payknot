@@ -128,6 +128,38 @@ body {
   border: 1px solid var(--app-border) !important;
 }
 
+.dark .checkout-page .ant-steps-item-title,
+.dark .checkout-page .ant-steps-item-description {
+  color: var(--app-fg) !important;
+}
+
+.dark .checkout-page .ant-steps-item-wait .ant-steps-item-icon {
+  background: #0f172a !important;
+  border-color: var(--app-border) !important;
+}
+
+.dark .checkout-page .ant-steps-item-process .ant-steps-item-icon {
+  background: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+}
+
+.dark .checkout-page .ant-steps-item-finish .ant-steps-item-icon {
+  background: #059669 !important;
+  border-color: #059669 !important;
+}
+
+.dark .checkout-page .ant-steps-item-icon .ant-steps-icon {
+  color: #e2e8f0 !important;
+}
+
+.dark .checkout-page .bg-rose-50 {
+  background-color: rgba(127, 29, 29, 0.22) !important;
+}
+
+.dark .checkout-page .border-rose-300 {
+  border-color: #b91c1c !important;
+}
+
 .blur-mask {
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);

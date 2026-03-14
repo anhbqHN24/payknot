@@ -275,10 +275,18 @@ function CheckoutInner() {
     if (!eventData) return false;
     const nextErrors: Record<string, string> = {};
     for (const field of eventData.participantForm || []) {
-      if (!field.required) continue;
-      const value = (participantData[field.field_name] || "").trim();
-      if (!value) {
-        nextErrors[field.field_name] = `${field.field_name} is required`;
+      const key = field.field_name;
+      const value = (participantData[key] || "").trim();
+      if (field.required && !value) {
+        nextErrors[key] = `${key} is required`;
+        continue;
+      }
+      if (
+        value &&
+        key.trim().toLowerCase() === "email" &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+      ) {
+        nextErrors[key] = "Please enter a valid email address.";
       }
     }
     setParticipantErrors(nextErrors);
@@ -663,7 +671,7 @@ function CheckoutInner() {
   const isPaid = statusData?.status === "paid";
 
   return (
-    <main className="mx-auto max-w-4xl p-4 md:p-6 w-full">
+    <main className="checkout-page mx-auto max-w-4xl p-4 md:p-6 w-full">
       <h1 className="text-2xl text-center font-semibold">{eventData.title}</h1>
       {eventData.eventImageUrl && (
         <img
