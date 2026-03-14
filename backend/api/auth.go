@@ -60,6 +60,15 @@ type ResendVerificationRequest struct {
 	Email string `json:"email"`
 }
 
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"newPassword"`
+}
+
 func Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
@@ -351,6 +360,74 @@ func ResendVerification(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "If the email exists, a verification message has been sent."})
 }
 
+func ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email != "" {
+		var userID int64
+		var provider string
+		err := database.DB.QueryRow(`SELECT id, auth_provider FROM users WHERE email = $1`, email).Scan(&userID, &provider)
+		if err == nil && provider == "password" {
+			_ = createAndSendPasswordResetToken(userID, email)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "If the email exists, a reset link has been sent."})
+}
+
+func ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	newPassword := req.NewPassword
+	if token == "" || len(newPassword) < 8 {
+		http.Error(w, "token and valid newPassword are required", http.StatusBadRequest)
+		return
+	}
+	hash := hashVerificationToken(token)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+	result, err := database.DB.Exec(`
+		UPDATE users
+		SET password_hash = $1,
+		    password_reset_token_hash = NULL,
+		    password_reset_expires_at = NULL,
+		    updated_at = NOW()
+		WHERE password_reset_token_hash = $2
+		  AND password_reset_expires_at > NOW()
+		  AND auth_provider = 'password'
+	`, string(newHash), hash)
+	if err != nil {
+		http.Error(w, "reset failed", http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "invalid or expired token", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "Password reset successful. You can now login."})
+}
+
 func issueSessionAndRespond(w http.ResponseWriter, r *http.Request, userID int64, name, email, provider string) error {
 	sessionID := uuid.NewString()
 	expiresAt := middleware.SessionExpiryFromNow()
@@ -385,6 +462,27 @@ func issueSessionAndRespond(w http.ResponseWriter, r *http.Request, userID int64
 		Provider: provider,
 	}})
 	return nil
+}
+
+func createAndSendPasswordResetToken(userID int64, email string) error {
+	token, err := randomToken(32)
+	if err != nil {
+		return err
+	}
+	hash := hashVerificationToken(token)
+	expiresAt := time.Now().Add(30 * time.Minute)
+	_, err = database.DB.Exec(`
+		UPDATE users
+		SET password_reset_token_hash = $1,
+		    password_reset_expires_at = $2,
+		    password_reset_sent_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $3
+	`, hash, expiresAt, userID)
+	if err != nil {
+		return err
+	}
+	return sendPasswordResetEmail(email, token)
 }
 
 func createAndSendVerificationToken(userID int64, email string) error {
@@ -429,13 +527,29 @@ func sendVerificationEmail(email, token string) error {
 		appURL = "https://pay.crea8r.xyz"
 	}
 	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", strings.TrimRight(appURL, "/"), url.QueryEscape(token))
+	subject := "Verify your Payknot account"
+	body := fmt.Sprintf("Please verify your email by opening this link:\n\n%s\n\nThis link expires in 30 minutes.", verifyLink)
+	return sendEmailWithMode(email, subject, body, "email-verify")
+}
 
+func sendPasswordResetEmail(email, token string) error {
+	appURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+	if appURL == "" {
+		appURL = "https://pay.crea8r.xyz"
+	}
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", strings.TrimRight(appURL, "/"), url.QueryEscape(token))
+	subject := "Reset your Payknot password"
+	body := fmt.Sprintf("You requested a password reset. Open this link to set a new password:\n\n%s\n\nThis link expires in 30 minutes.", resetLink)
+	return sendEmailWithMode(email, subject, body, "password-reset")
+}
+
+func sendEmailWithMode(email, subject, body, logTag string) error {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_MODE")))
 	if mode == "" {
 		mode = "log"
 	}
 	if mode == "log" {
-		fmt.Printf("[email-verify] %s -> %s\n", email, verifyLink)
+		fmt.Printf("[%s] %s -> %s\n", logTag, email, body)
 		return nil
 	}
 
@@ -451,15 +565,12 @@ func sendVerificationEmail(email, token string) error {
 		return fmt.Errorf("smtp is not configured")
 	}
 
-	subject := "Verify your Payknot account"
-	body := fmt.Sprintf("Please verify your email by opening this link:\n\n%s\n\nThis link expires in 30 minutes.", verifyLink)
 	msg := []byte("From: " + from + "\r\n" +
 		"To: " + email + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" +
 		body + "\r\n")
-
 	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
 	return smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{email}, msg)
 }

@@ -155,7 +155,10 @@ export default function Home() {
   const [authCheckNonce, setAuthCheckNonce] = useState(0);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authInfoMessage, setAuthInfoMessage] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot">(
+    "login",
+  );
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -992,7 +995,11 @@ export default function Home() {
     const password = authPassword;
     const name = authName.trim();
 
-    if (!email || !password) {
+    if (!email) {
+      setError("Email is required");
+      return;
+    }
+    if (authMode !== "forgot" && !password) {
       setError("Email and password are required");
       return;
     }
@@ -1004,11 +1011,17 @@ export default function Home() {
     setAuthSubmitting(true);
     try {
       const endpoint =
-        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+        authMode === "register"
+          ? "/api/auth/register"
+          : authMode === "forgot"
+            ? "/api/auth/forgot-password"
+            : "/api/auth/login";
       const payload =
         authMode === "register"
           ? { name, email, password }
-          : { email, password };
+          : authMode === "forgot"
+            ? { email }
+            : { email, password };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -1025,6 +1038,10 @@ export default function Home() {
         );
         setAuthMode("login");
         setAuthPassword("");
+      } else if (authMode === "forgot") {
+        setAuthInfoMessage(
+          data.message || "If the email exists, a reset link has been sent.",
+        );
       } else {
         setCurrentUser(data.user as AppUser);
       }
@@ -1041,7 +1058,17 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = window.setInterval(
+      () => setResendCooldown((v) => (v > 0 ? v - 1 : 0)),
+      1000,
+    );
+    return () => window.clearInterval(t);
+  }, [resendCooldown]);
+
   const resendVerification = async () => {
+    if (resendCooldown > 0) return;
     const email = authEmail.trim().toLowerCase();
     if (!email) {
       setError("Enter your email first to resend verification.");
@@ -1059,6 +1086,7 @@ export default function Home() {
         data.message ||
           "If the email exists, a verification message has been sent.",
       );
+      setResendCooldown(60);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resend email");
@@ -1721,7 +1749,7 @@ export default function Home() {
               Login required to access event checkout management.
             </p>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setAuthMode("login")}
                 className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-slate-900 text-white" : "bg-white"}`}
@@ -1733,6 +1761,12 @@ export default function Home() {
                 className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-slate-900 text-white" : "bg-white"}`}
               >
                 Register
+              </button>
+              <button
+                onClick={() => setAuthMode("forgot")}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "bg-slate-900 text-white" : "bg-white"}`}
+              >
+                Forgot Password
               </button>
             </div>
 
@@ -1756,15 +1790,17 @@ export default function Home() {
                   onChange={(e) => setAuthEmail(e.target.value)}
                 />
               </label>
-              <label className="text-sm block">
-                <span className="block mb-1">Password</span>
-                <input
-                  className="border rounded-lg px-3 py-2 w-full"
-                  type="password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                />
-              </label>
+              {authMode !== "forgot" && (
+                <label className="text-sm block">
+                  <span className="block mb-1">Password</span>
+                  <input
+                    className="border rounded-lg px-3 py-2 w-full"
+                    type="password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                  />
+                </label>
+              )}
               <button
                 disabled={authSubmitting}
                 className="w-full rounded-lg bg-slate-900 text-white py-2.5 font-semibold disabled:opacity-60"
@@ -1773,20 +1809,37 @@ export default function Home() {
                   ? "Please wait..."
                   : authMode === "register"
                     ? "Create Account"
-                    : "Login"}
+                    : authMode === "forgot"
+                      ? "Send Reset Link"
+                      : "Login"}
               </button>
             </form>
 
-            <div className="pt-2 border-t">
-              <p className="text-sm mb-2">Or continue with Google</p>
-              {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
-                <div id="google-login-button" />
-              ) : (
-                <p className="text-xs text-amber-700">
-                  Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable Google OAuth.
-                </p>
-              )}
-            </div>
+            {authMode === "login" && (
+              <button
+                onClick={() => {
+                  setAuthMode("forgot");
+                  setError("");
+                  setAuthInfoMessage("");
+                }}
+                className="text-sm text-blue-700 underline"
+              >
+                Forgot your password?
+              </button>
+            )}
+
+            {authMode !== "forgot" && (
+              <div className="pt-2 border-t">
+                <p className="text-sm mb-2">Or continue with Google</p>
+                {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+                  <div id="google-login-button" />
+                ) : (
+                  <p className="text-xs text-amber-700">
+                    Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable Google OAuth.
+                  </p>
+                )}
+              </div>
+            )}
 
             {authInfoMessage && (
               <p className="text-sm text-emerald-700">{authInfoMessage}</p>
@@ -1795,9 +1848,12 @@ export default function Home() {
             {authMode === "login" && error.includes("verify") && (
               <button
                 onClick={resendVerification}
-                className="rounded-lg border px-3 py-1.5 text-sm"
+                disabled={resendCooldown > 0}
+                className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-60"
               >
-                Resend verification email
+                {resendCooldown > 0
+                  ? `Resend verification in ${resendCooldown}s`
+                  : "Resend verification email"}
               </button>
             )}
           </section>

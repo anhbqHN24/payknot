@@ -5,10 +5,23 @@ Base: `/api`
 ## Auth
 - `POST /auth/register`
   - body: `{ name, email, password }`
-  - returns: `{ user }`, sets session cookie
+  - returns: `{ message }` and sends verification email (no immediate login)
+- `POST /auth/verify-email`
+  - body: `{ token }`
+  - verifies email ownership
+- `POST /auth/resend-verification`
+  - body: `{ email }`
+  - resends verification email for unverified password accounts
 - `POST /auth/login`
   - body: `{ email, password }`
   - returns: `{ user }`, sets session cookie
+  - returns `EMAIL_NOT_VERIFIED` if account is not verified
+- `POST /auth/forgot-password`
+  - body: `{ email }`
+  - sends reset link if account exists
+- `POST /auth/reset-password`
+  - body: `{ token, newPassword }`
+  - resets password for valid token
 - `POST /auth/google`
   - body: `{ credential }`
   - returns: `{ user }`, sets session cookie
