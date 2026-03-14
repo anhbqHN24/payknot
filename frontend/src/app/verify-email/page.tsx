@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const params = useSearchParams();
   const token = useMemo(() => params.get("token") || "", [params]);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
@@ -34,25 +34,39 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   return (
+    <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
+      <h1 className="text-xl font-semibold">Email Verification</h1>
+      <p
+        className={`text-sm ${
+          status === "success"
+            ? "text-emerald-700"
+            : status === "error"
+              ? "text-red-600"
+              : "text-slate-600"
+        }`}
+      >
+        {message}
+      </p>
+      <a href="/" className="inline-block rounded-lg border px-3 py-1.5 text-sm">
+        Back to Login
+      </a>
+    </section>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto max-w-lg px-4 py-14">
-        <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6 space-y-3">
-          <h1 className="text-xl font-semibold">Email Verification</h1>
-          <p
-            className={`text-sm ${
-              status === "success"
-                ? "text-emerald-700"
-                : status === "error"
-                  ? "text-red-600"
-                  : "text-slate-600"
-            }`}
-          >
-            {message}
-          </p>
-          <a href="/" className="inline-block rounded-lg border px-3 py-1.5 text-sm">
-            Back to Login
-          </a>
-        </section>
+        <Suspense
+          fallback={
+            <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
+              <p className="text-sm text-slate-600">Loading verification...</p>
+            </section>
+          }
+        >
+          <VerifyEmailContent />
+        </Suspense>
       </div>
     </main>
   );
