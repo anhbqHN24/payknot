@@ -1,11 +1,15 @@
 package api
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"os"
 	"strings"
@@ -42,6 +46,18 @@ type GoogleLoginRequest struct {
 
 type authResponse struct {
 	User AuthUserResponse `json:"user"`
+}
+
+type authMessageResponse struct {
+	Message string `json:"message"`
+}
+
+type VerifyEmailRequest struct {
+	Token string `json:"token"`
+}
+
+type ResendVerificationRequest struct {
+	Email string `json:"email"`
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +98,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	err = database.DB.QueryRow(`
 		INSERT INTO users (name, email, password_hash, auth_provider, email_verified)
-		VALUES ($1, $2, $3, 'password', true)
+		VALUES ($1, $2, $3, 'password', false)
 		RETURNING id
 	`, name, email, string(hash)).Scan(&userID)
 	if err != nil {
@@ -94,10 +110,15 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := issueSessionAndRespond(w, r, userID, name, email, "password"); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := createAndSendVerificationToken(userID, email); err != nil {
+		http.Error(w, "Failed to send verification email", http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(authMessageResponse{
+		Message: "Registration successful. Please verify your email before login.",
+	})
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
@@ -122,11 +143,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	var name, provider string
 	var passwordHash sql.NullString
+	var emailVerified bool
 	err := database.DB.QueryRow(`
-		SELECT id, name, COALESCE(password_hash, ''), auth_provider
+		SELECT id, name, COALESCE(password_hash, ''), auth_provider, email_verified
 		FROM users
 		WHERE email = $1
-	`, email).Scan(&userID, &name, &passwordHash, &provider)
+	`, email).Scan(&userID, &name, &passwordHash, &provider, &emailVerified)
 	if err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
@@ -139,6 +161,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash.String), []byte(password)); err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	if !emailVerified {
+		http.Error(w, "EMAIL_NOT_VERIFIED", http.StatusForbidden)
 		return
 	}
 
@@ -250,6 +276,81 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+	hash := hashVerificationToken(token)
+
+	result, err := database.DB.Exec(`
+		UPDATE users
+		SET email_verified = true,
+		    email_verification_token_hash = NULL,
+		    email_verification_expires_at = NULL,
+		    updated_at = NOW()
+		WHERE email_verification_token_hash = $1
+		  AND email_verification_expires_at > NOW()
+		  AND email_verified = false
+	`, hash)
+	if err != nil {
+		http.Error(w, "verification failed", http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "invalid or expired token", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "Email verified successfully. You can now login."})
+}
+
+func ResendVerification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ResendVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "If the email exists, a verification message has been sent."})
+		return
+	}
+
+	var userID int64
+	var verified bool
+	var provider string
+	err := database.DB.QueryRow(`SELECT id, email_verified, auth_provider FROM users WHERE email = $1`, email).Scan(&userID, &verified, &provider)
+	if err != nil || verified || provider != "password" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "If the email exists, a verification message has been sent."})
+		return
+	}
+	if err := createAndSendVerificationToken(userID, email); err != nil {
+		http.Error(w, "Failed to send verification email", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(authMessageResponse{Message: "If the email exists, a verification message has been sent."})
+}
+
 func issueSessionAndRespond(w http.ResponseWriter, r *http.Request, userID int64, name, email, provider string) error {
 	sessionID := uuid.NewString()
 	expiresAt := middleware.SessionExpiryFromNow()
@@ -284,6 +385,83 @@ func issueSessionAndRespond(w http.ResponseWriter, r *http.Request, userID int64
 		Provider: provider,
 	}})
 	return nil
+}
+
+func createAndSendVerificationToken(userID int64, email string) error {
+	token, err := randomToken(32)
+	if err != nil {
+		return err
+	}
+	hash := hashVerificationToken(token)
+	expiresAt := time.Now().Add(30 * time.Minute)
+
+	_, err = database.DB.Exec(`
+		UPDATE users
+		SET email_verification_token_hash = $1,
+		    email_verification_expires_at = $2,
+		    email_verification_sent_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $3
+	`, hash, expiresAt, userID)
+	if err != nil {
+		return err
+	}
+
+	return sendVerificationEmail(email, token)
+}
+
+func randomToken(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func hashVerificationToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func sendVerificationEmail(email, token string) error {
+	appURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+	if appURL == "" {
+		appURL = "https://pay.crea8r.xyz"
+	}
+	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", strings.TrimRight(appURL, "/"), url.QueryEscape(token))
+
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_MODE")))
+	if mode == "" {
+		mode = "log"
+	}
+	if mode == "log" {
+		fmt.Printf("[email-verify] %s -> %s\n", email, verifyLink)
+		return nil
+	}
+
+	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
+	smtpPort := strings.TrimSpace(os.Getenv("SMTP_PORT"))
+	smtpUser := strings.TrimSpace(os.Getenv("SMTP_USER"))
+	smtpPass := strings.TrimSpace(os.Getenv("SMTP_PASS"))
+	from := strings.TrimSpace(os.Getenv("SMTP_FROM"))
+	if from == "" {
+		from = smtpUser
+	}
+	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" || from == "" {
+		return fmt.Errorf("smtp is not configured")
+	}
+
+	subject := "Verify your Payknot account"
+	body := fmt.Sprintf("Please verify your email by opening this link:\n\n%s\n\nThis link expires in 30 minutes.", verifyLink)
+	msg := []byte("From: " + from + "\r\n" +
+		"To: " + email + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" +
+		body + "\r\n")
+
+	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+	return smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{email}, msg)
 }
 
 func verifyGoogleIDToken(idToken string) (string, string, error) {

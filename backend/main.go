@@ -17,6 +17,8 @@ func main() {
 	http.HandleFunc("/api/auth/register", api.Register)
 	http.HandleFunc("/api/auth/login", api.Login)
 	http.HandleFunc("/api/auth/google", api.GoogleLogin)
+	http.HandleFunc("/api/auth/verify-email", api.VerifyEmail)
+	http.HandleFunc("/api/auth/resend-verification", api.ResendVerification)
 	http.HandleFunc("/api/auth/me", middleware.RequireAuthOrAgentKey(api.Me))
 	http.HandleFunc("/api/auth/logout", api.Logout)
 

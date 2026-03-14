@@ -154,6 +154,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authCheckNonce, setAuthCheckNonce] = useState(0);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authInfoMessage, setAuthInfoMessage] = useState("");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
@@ -985,6 +986,7 @@ export default function Home() {
   const onAuthSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    setAuthInfoMessage("");
 
     const email = authEmail.trim().toLowerCase();
     const password = authPassword;
@@ -1016,12 +1018,50 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setCurrentUser(data.user as AppUser);
+      if (authMode === "register") {
+        setAuthInfoMessage(
+          data.message ||
+            "Registration successful. Please verify your email before login.",
+        );
+        setAuthMode("login");
+        setAuthPassword("");
+      } else {
+        setCurrentUser(data.user as AppUser);
+      }
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      const msg = err instanceof Error ? err.message : "Authentication failed";
+      if (msg.includes("EMAIL_NOT_VERIFIED")) {
+        setError("Please verify your email before login.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setAuthSubmitting(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    const email = authEmail.trim().toLowerCase();
+    if (!email) {
+      setError("Enter your email first to resend verification.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setAuthInfoMessage(
+        data.message ||
+          "If the email exists, a verification message has been sent.",
+      );
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend email");
     }
   };
 
@@ -1748,7 +1788,18 @@ export default function Home() {
               )}
             </div>
 
+            {authInfoMessage && (
+              <p className="text-sm text-emerald-700">{authInfoMessage}</p>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {authMode === "login" && error.includes("verify") && (
+              <button
+                onClick={resendVerification}
+                className="rounded-lg border px-3 py-1.5 text-sm"
+              >
+                Resend verification email
+              </button>
+            )}
           </section>
         </div>
       </main>
