@@ -15,15 +15,15 @@
 }
 
 .dark {
-  --background: #020617;
-  --foreground: #e2e8f0;
-  --primary: #fb7185;
+  --background: #0b0b12;
+  --foreground: #e8eaf7;
+  --primary: #7c5cff;
 
-  --app-bg: #020617;
-  --app-surface: #0b1220;
-  --app-fg: #e2e8f0;
-  --app-muted: #94a3b8;
-  --app-border: #334155;
+  --app-bg: #0b0b12;
+  --app-surface: #12131d;
+  --app-fg: #e8eaf7;
+  --app-muted: #a7aec9;
+  --app-border: #2a2f45;
 }
 
 body {
@@ -65,15 +65,15 @@ body {
   pointer-events: none;
   z-index: -1;
   background:
-    radial-gradient(40rem 30rem at 10% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
-    radial-gradient(40rem 30rem at 90% -5%, rgba(236, 72, 153, 0.14), transparent 60%);
+    radial-gradient(44rem 32rem at 8% -8%, rgba(124, 92, 255, 0.2), transparent 60%),
+    radial-gradient(42rem 30rem at 92% -6%, rgba(34, 211, 238, 0.14), transparent 62%);
   animation: driftGlow 14s ease-in-out infinite;
 }
 
 .dark .magic-bg {
   background:
-    radial-gradient(38rem 26rem at 15% -5%, rgba(59, 130, 246, 0.24), transparent 65%),
-    radial-gradient(38rem 26rem at 85% -10%, rgba(168, 85, 247, 0.22), transparent 65%);
+    radial-gradient(46rem 30rem at 12% -8%, rgba(124, 92, 255, 0.34), transparent 66%),
+    radial-gradient(42rem 28rem at 88% -10%, rgba(56, 189, 248, 0.22), transparent 66%);
 }
 
 .dark .bg-white,
@@ -101,7 +101,7 @@ body {
 .dark input,
 .dark textarea,
 .dark select {
-  background-color: #0f172a !important;
+  background-color: #171a26 !important;
   color: var(--app-fg) !important;
   border-color: var(--app-border) !important;
 }
@@ -112,7 +112,7 @@ body {
 }
 
 .dark table thead tr {
-  background-color: #0f172a !important;
+  background-color: #171a26 !important;
 }
 
 .dark table tbody tr {
@@ -130,13 +130,13 @@ body {
 .dark .ant-picker,
 .dark .ant-upload,
 .dark .ant-upload-drag {
-  background: #0b1220 !important;
+  background: #12131d !important;
   color: var(--app-fg) !important;
   border-color: var(--app-border) !important;
 }
 
 .dark .ant-message-notice-content {
-  background: #0b1220 !important;
+  background: #12131d !important;
   color: var(--app-fg) !important;
   border: 1px solid var(--app-border) !important;
 }
@@ -147,13 +147,13 @@ body {
 }
 
 .dark .checkout-page .ant-steps-item-wait .ant-steps-item-icon {
-  background: #0f172a !important;
+  background: #171a26 !important;
   border-color: var(--app-border) !important;
 }
 
 .dark .checkout-page .ant-steps-item-process .ant-steps-item-icon {
-  background: #4f46e5 !important;
-  border-color: #4f46e5 !important;
+  background: #7c5cff !important;
+  border-color: #7c5cff !important;
 }
 
 .dark .checkout-page .ant-steps-item-finish .ant-steps-item-icon {
