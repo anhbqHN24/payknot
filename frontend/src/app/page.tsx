@@ -1121,10 +1121,24 @@ export default function Home() {
       window.clearTimeout(detailCloseTimerRef.current);
       detailCloseTimerRef.current = null;
     }
+    const shouldKeepDraft =
+      !detailRender &&
+      detailMode === "create" &&
+      (title.trim() ||
+        description.trim() ||
+        eventDate.trim() ||
+        checkoutExpiresAt.trim() ||
+        location.trim() ||
+        organizerName.trim() ||
+        merchantWallet.trim() ||
+        eventImageUrl.trim());
+
     setDetailMode("create");
     setSelectedEventID(null);
     setEventFormErrors({});
-    resetForm();
+    if (!shouldKeepDraft) {
+      resetForm();
+    }
     setCheckouts([]);
     setDetailTab("info");
     setDetailRender(true);
@@ -1154,6 +1168,15 @@ export default function Home() {
       setDetailClosing(false);
       detailCloseTimerRef.current = null;
     }, 260);
+  };
+
+  const resetDetailFields = () => {
+    setEventFormErrors({});
+    if (detailMode === "edit" && selectedEvent) {
+      fillFormFromEvent(selectedEvent);
+      return;
+    }
+    resetForm();
   };
 
   useEffect(() => {
@@ -1382,12 +1405,28 @@ export default function Home() {
       </section>
 
       {detailMode === "edit" && selectedEvent && (
-        <div className="rounded-lg border bg-slate-50 p-3">
-          <p className="text-xs text-slate-500 mb-1">Checkout link</p>
-          <div className="font-mono text-xs break-all">{fullCheckoutLink}</div>
-          <div className="flex gap-2 mt-2">
-            <button onClick={() => copyText(fullCheckoutLink)} className="rounded-lg border px-2.5 py-1 text-xs">Copy Link</button>
-            <a href={`/checkout/${selectedEvent.slug}`} target="_blank" rel="noreferrer" className="rounded-lg border px-2.5 py-1 text-xs">Open Checkout</a>
+        <div className="rounded-xl border border-indigo-300/70 dark:border-indigo-700/50 bg-gradient-to-r from-indigo-50 to-cyan-50 dark:from-indigo-950/35 dark:to-cyan-950/30 p-3 shadow-sm">
+          <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-1">
+            Primary asset: Checkout link
+          </p>
+          <div className="font-mono text-xs break-all rounded-lg app-surface border border-indigo-200/70 dark:border-indigo-700/40 px-2 py-2">
+            {fullCheckoutLink}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => copyText(fullCheckoutLink)}
+              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 text-xs font-semibold"
+            >
+              Copy Checkout Link
+            </button>
+            <a
+              href={`/checkout/${selectedEvent.slug}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-indigo-300 dark:border-indigo-600 px-3 py-1.5 text-xs font-semibold"
+            >
+              Open Checkout Page
+            </a>
           </div>
         </div>
       )}
@@ -2274,6 +2313,12 @@ export default function Home() {
                       </button>
                     )}
                     <button
+                      onClick={resetDetailFields}
+                      className="rounded-lg bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 text-sm font-semibold"
+                    >
+                      Reset Fields
+                    </button>
+                    <button
                       onClick={saveEventChanges}
                       disabled={
                         creating ||
@@ -2372,6 +2417,12 @@ export default function Home() {
                         {deleting ? "Deleting..." : "Delete"}
                       </button>
                     )}
+                    <button
+                      onClick={resetDetailFields}
+                      className="rounded-lg bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 text-sm font-semibold"
+                    >
+                      Reset Fields
+                    </button>
                     <button
                       onClick={saveEventChanges}
                       disabled={

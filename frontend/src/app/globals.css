@@ -47,20 +47,33 @@ body {
   color: var(--app-muted);
 }
 
+@keyframes driftGlow {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1.5%, -1.5%, 0) scale(1.04);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .magic-bg {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -1;
   background:
-    radial-gradient(40rem 30rem at 10% -10%, rgba(99, 102, 241, 0.15), transparent 60%),
-    radial-gradient(40rem 30rem at 90% -5%, rgba(236, 72, 153, 0.12), transparent 60%);
+    radial-gradient(40rem 30rem at 10% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+    radial-gradient(40rem 30rem at 90% -5%, rgba(236, 72, 153, 0.14), transparent 60%);
+  animation: driftGlow 14s ease-in-out infinite;
 }
 
 .dark .magic-bg {
   background:
-    radial-gradient(38rem 26rem at 15% -5%, rgba(59, 130, 246, 0.22), transparent 65%),
-    radial-gradient(38rem 26rem at 85% -10%, rgba(168, 85, 247, 0.2), transparent 65%);
+    radial-gradient(38rem 26rem at 15% -5%, rgba(59, 130, 246, 0.24), transparent 65%),
+    radial-gradient(38rem 26rem at 85% -10%, rgba(168, 85, 247, 0.22), transparent 65%);
 }
 
 .dark .bg-white,
