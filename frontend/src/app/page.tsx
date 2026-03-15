@@ -717,9 +717,9 @@ export default function Home() {
     }
 
     window.setTimeout(() => {
-      const el = document.querySelector(`[data-error-field="${field}"]`) as
-        | HTMLElement
-        | null;
+      const el = document.querySelector(
+        `[data-error-field="${field}"]`,
+      ) as HTMLElement | null;
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       if ("focus" in el) {
@@ -1217,7 +1217,9 @@ export default function Home() {
               <option value="luma">Luma.com</option>
             </select>
             {eventFormErrors.eventSource && (
-              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.eventSource}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {eventFormErrors.eventSource}
+              </p>
             )}
           </label>
           {eventSource === "luma" && (
@@ -1247,7 +1249,9 @@ export default function Home() {
                 </button>
               </div>
               {eventFormErrors.sourceUrl && (
-                <p className="mt-1 text-xs text-rose-600">{eventFormErrors.sourceUrl}</p>
+                <p className="mt-1 text-xs text-rose-600">
+                  {eventFormErrors.sourceUrl}
+                </p>
               )}
             </label>
           )}
@@ -1274,7 +1278,9 @@ export default function Home() {
               required
             />
             {eventFormErrors.title && (
-              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.title}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {eventFormErrors.title}
+              </p>
             )}
           </label>
           <label className="text-sm">
@@ -1319,7 +1325,9 @@ export default function Home() {
               }}
             />
             {eventFormErrors.checkoutExpiresAt && (
-              <p className="mt-1 text-xs text-rose-600">{eventFormErrors.checkoutExpiresAt}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {eventFormErrors.checkoutExpiresAt}
+              </p>
             )}
           </label>
         </div>
@@ -1328,14 +1336,46 @@ export default function Home() {
       <section className="rounded-lg border border-slate-200 p-3 space-y-3">
         <h4 className="text-sm font-semibold text-slate-700">Description</h4>
         <label className="text-sm block">
-          <span className="block mb-1 font-medium">Brief event description</span>
+          <span className="block mb-1 font-medium">
+            Brief event description
+          </span>
           <div className="rounded-lg border border-slate-300 bg-white">
             <div className="flex flex-wrap gap-1 border-b border-slate-200 px-2 py-1.5">
-              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("bold")}>Bold</button>
-              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("italic")}>Italic</button>
-              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("insertUnorderedList")}>Bullet</button>
-              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("insertOrderedList")}>Numbered</button>
-              <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => applyDescriptionCommand("createLink")}>Link</button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => applyDescriptionCommand("bold")}
+              >
+                Bold
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => applyDescriptionCommand("italic")}
+              >
+                Italic
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => applyDescriptionCommand("insertUnorderedList")}
+              >
+                Bullet
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => applyDescriptionCommand("insertOrderedList")}
+              >
+                Numbered
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => applyDescriptionCommand("createLink")}
+              >
+                Link
+              </button>
             </div>
             <div
               ref={descriptionEditorRef}
@@ -1344,7 +1384,9 @@ export default function Home() {
               className="min-h-36 w-full px-3 py-2 text-sm outline-none [&_a]:text-blue-600 [&_a]:underline [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_strong]:font-semibold [&_ul]:ml-5 [&_ul]:list-disc"
               onInput={(e) =>
                 setDescription(
-                  sanitizeRichHtml((e.currentTarget as HTMLDivElement).innerHTML),
+                  sanitizeRichHtml(
+                    (e.currentTarget as HTMLDivElement).innerHTML,
+                  ),
                 )
               }
             />
@@ -1390,16 +1432,27 @@ export default function Home() {
           {importedLumaImageURL && (
             <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
               <p className="text-xs text-amber-700">
-                Imported Luma image detected. Upload and crop one image before saving.
+                Imported Luma image detected. Upload and crop one image before
+                saving.
               </p>
-              <img src={importedLumaImageURL} alt="Imported Luma event" className="mt-2 h-20 w-20 rounded border object-cover" />
+              <img
+                src={importedLumaImageURL}
+                alt="Imported Luma event"
+                className="mt-2 h-20 w-20 rounded border object-cover"
+              />
             </div>
           )}
           {eventImageUrl && (
-            <img src={eventImageUrl} alt="Event preview" className="mt-2 h-28 w-28 rounded-lg border object-cover" />
+            <img
+              src={eventImageUrl}
+              alt="Event preview"
+              className="mt-2 h-28 w-28 rounded-lg border object-cover"
+            />
           )}
           {eventFormErrors.eventImageUrl && (
-            <p className="mt-1 text-xs text-rose-600">{eventFormErrors.eventImageUrl}</p>
+            <p className="mt-1 text-xs text-rose-600">
+              {eventFormErrors.eventImageUrl}
+            </p>
           )}
         </div>
       </section>
@@ -1432,7 +1485,6 @@ export default function Home() {
       )}
     </div>
   );
-
 
   const renderCheckoutFormSection = () => (
     <div className="space-y-3">
@@ -1584,7 +1636,7 @@ export default function Home() {
         </div>
       </div>
       <div
-        className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 app-surface backdrop-blur" : "app-surface"}`}
+        className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-[-112px] app-surface backdrop-blur" : "app-surface"}`}
       >
         <button
           disabled={checkoutFormPage <= 1}
@@ -1802,19 +1854,19 @@ export default function Home() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setAuthMode("login")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-indigo-600" : "app-surface"}`}
               >
                 Login
               </button>
               <button
                 onClick={() => setAuthMode("register")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-indigo-600" : "app-surface"}`}
               >
                 Register
               </button>
               <button
                 onClick={() => setAuthMode("forgot")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "bg-indigo-600 " : "app-surface"}`}
               >
                 Forgot Password
               </button>
@@ -2048,10 +2100,12 @@ export default function Home() {
             </div>
             <div className="hidden md:block mb-4 rounded-xl border border-indigo-200/70 dark:border-indigo-700/40 bg-gradient-to-r from-indigo-50 to-cyan-50 dark:from-indigo-950/40 dark:to-cyan-950/30 p-3">
               <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-                Build trust with verifiable deposits and clear participant outcomes.
+                Build trust with verifiable deposits and clear participant
+                outcomes.
               </p>
               <p className="text-xs app-muted mt-1">
-                Keep event intake smooth while preserving payment integrity for every participant.
+                Keep event intake smooth while preserving payment integrity for
+                every participant.
               </p>
             </div>
             <div className="hidden md:grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -2242,7 +2296,7 @@ export default function Home() {
                       <button
                         key={tab}
                         onClick={() => setDetailTab(tab)}
-                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface border-slate-300 dark:border-slate-700"}`}
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "bg-indigo-600 text-white border-indigo-600" : "app-surface border-slate-300 dark:border-slate-700"}`}
                       >
                         {tab === "info"
                           ? "General Info"
