@@ -1854,19 +1854,19 @@ export default function Home() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setAuthMode("login")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-indigo-600" : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Login
               </button>
               <button
                 onClick={() => setAuthMode("register")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-indigo-600" : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Register
               </button>
               <button
                 onClick={() => setAuthMode("forgot")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "bg-indigo-600 " : "app-surface"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Forgot Password
               </button>
