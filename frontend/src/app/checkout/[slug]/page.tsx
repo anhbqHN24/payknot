@@ -124,6 +124,14 @@ function CheckoutInner() {
   const [reference, setReference] = useState("");
   const [statusData, setStatusData] = useState<CheckoutStatus | null>(null);
   const [showFullSignature, setShowFullSignature] = useState(false);
+
+  const checkoutStatusClass = (status?: string) => {
+    const s = (status || "pending_payment").toLowerCase();
+    if (s === "paid" || s === "approved") return "status-badge paid";
+    if (s === "rejected" || s === "failed" || s === "cancelled")
+      return "status-badge rejected";
+    return "status-badge pending_payment";
+  };
   const [participantErrors, setParticipantErrors] = useState<
     Record<string, string>
   >({});
@@ -712,7 +720,7 @@ function CheckoutInner() {
 
       <section
         ref={lookupSectionRef}
-        className={`mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-all ${
+        className={`mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4 shadow-sm transition-all ${
           highlightLookup ? "ring-2 ring-amber-400 border-amber-400" : ""
         }`}
       >
@@ -735,7 +743,7 @@ function CheckoutInner() {
             />
           </label>
           <button
-            className="h-10 rounded bg-slate-900 px-4 text-white disabled:opacity-60"
+            className="h-10 rounded bg-indigo-600 hover:bg-indigo-500 px-4 text-white disabled:opacity-60"
             disabled={checkingLookup}
             onClick={async () => {
               const email = lookupEmail.trim().toLowerCase();
@@ -803,7 +811,7 @@ function CheckoutInner() {
         )}
       </section>
 
-      <div className="mt-6 rounded-xl border p-4">
+      <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
         <Steps
           current={step}
           direction="horizontal"
@@ -822,7 +830,7 @@ function CheckoutInner() {
       )}
 
       {step === 0 && (
-        <section className="mt-4 rounded-xl border p-4">
+        <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">
             Step 1: Participant Form
           </h2>
@@ -859,7 +867,7 @@ function CheckoutInner() {
             ))}
           </div>
           <button
-            className="mt-4 rounded bg-slate-900 px-4 py-2 text-white"
+            className="mt-4 rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-white"
             onClick={async () => {
               if (!validateStep1()) return;
               const email = emailFromParticipantData();
@@ -888,7 +896,7 @@ function CheckoutInner() {
       )}
 
       {step === 1 && (
-        <section className="mt-4 rounded-xl border p-4">
+        <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">Step 2: Payment Method</h2>
           <p className="mb-2 text-sm text-slate-600">
             Deposit Amount: {eventData.amountUsdc} USDC
@@ -907,7 +915,7 @@ function CheckoutInner() {
               Back
             </button>
             <button
-              className="rounded bg-slate-900 px-4 py-2 text-white"
+              className="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-white"
               onClick={() => {
                 setSessionMethod(paymentMethod);
                 setStep(2);
@@ -953,7 +961,7 @@ function CheckoutInner() {
             )}
 
           {chosenMethod === "wallet" ? (
-            <div className="rounded-xl border bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4 shadow-sm">
               <p className="mb-3 text-sm text-slate-600">
                 Connect your wallet and pay your event deposit in one flow.
               </p>
@@ -978,13 +986,13 @@ function CheckoutInner() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4 shadow-sm">
               <p className="mb-3 text-sm text-slate-600">
                 Open the QR payment window, scan with your wallet app, and wait
                 for automatic verification.
               </p>
               <button
-                className="h-11 rounded-lg bg-slate-900 px-5 text-sm font-medium text-white disabled:opacity-60"
+                className="h-11 rounded-lg bg-indigo-600 hover:bg-indigo-500 px-5 text-sm font-medium text-white disabled:opacity-60"
                 disabled={loadingPay}
                 onClick={startQrSession}
               >
@@ -996,14 +1004,19 @@ function CheckoutInner() {
           {(statusData?.reference ||
             statusData?.status ||
             statusData?.signature) && (
-            <div className="mt-4 rounded border bg-slate-50 p-3 text-sm">
+            <div className="mt-4 rounded border border-slate-200 dark:border-slate-700 app-surface p-3 text-sm">
               <p>
                 Reference:{" "}
                 <span className="font-mono">
                   {statusData?.reference || "-"}
                 </span>
               </p>
-              <p>Status: {statusData?.status || "pending_payment"}</p>
+              <p className="flex items-center gap-2">
+                Status:
+                <span className={checkoutStatusClass(statusData?.status)}>
+                  {(statusData?.status || "pending_payment").replaceAll("_", " ")}
+                </span>
+              </p>
               <p>
                 Method: {methodLabel(statusData?.paymentMethod || chosenMethod)}
               </p>

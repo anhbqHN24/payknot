@@ -1606,9 +1606,9 @@ export default function Home() {
             {Math.min(depositPage * 10, filteredDeposits.length)} of{" "}
             {filteredDeposits.length} deposits
           </div>
-          <div className="rounded-lg border overflow-auto max-h-80">
+          <div className="rounded-lg border overflow-auto max-h-80 app-surface">
             <table className="min-w-full text-xs">
-              <thead className="bg-slate-50">
+              <thead className="bg-slate-50 dark:bg-slate-900/70">
                 <tr className="text-left">
                   {participantFields
                     .filter((f) => f.required)
@@ -1671,7 +1671,9 @@ export default function Home() {
                       {row.walletAddress}
                     </td>
                     <td className="px-2 py-2">
-                      <div>{row.status}</div>
+                      <span className={`status-badge ${row.status}`}>
+                        {row.status.replaceAll("_", " ")}
+                      </span>
                     </td>
                     <td className="px-2 py-2">
                       {row.signature && (
@@ -1691,7 +1693,7 @@ export default function Home() {
             </table>
           </div>
           <div
-            className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+            className={`border-t border-slate-200 dark:border-slate-700 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 app-surface backdrop-blur" : "app-surface"}`}
           >
             <button
               disabled={depositPage <= 1}
@@ -1904,6 +1906,15 @@ export default function Home() {
             </button>
           </div>
 
+          <div className="mt-3 rounded-xl border border-indigo-200/70 dark:border-indigo-700/40 bg-gradient-to-r from-indigo-50 to-cyan-50 dark:from-indigo-950/40 dark:to-cyan-950/30 p-3">
+            <p className="text-xs md:text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+              Trusted event deposit operations — verify faster, manage safer.
+            </p>
+            <p className="text-[11px] md:text-xs app-muted mt-1">
+              Every checkout is reference-linked on-chain with clear participant status tracking.
+            </p>
+          </div>
+
           <div className="mt-3 md:hidden space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -1982,10 +1993,10 @@ export default function Home() {
         <section className="rounded-2xl app-surface border shadow-sm p-3 md:p-6 space-y-3">
           <div
             ref={sessionsHeaderRef}
-            className="hidden md:block sticky z-20 bg-white/95 backdrop-blur rounded-lg border border-slate-200 p-3 flex-col gap-3  transition-all duration-300"
+            className="hidden md:block sticky z-20 app-surface backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 p-3 flex-col gap-3 transition-all duration-300"
             style={{ top: sessionsHeaderPinned ? 0 : desktopHeaderHeight + 8 }}
           >
-            <div className="md:flex md:flex-row md:items-center md:justify-between mb-5">
+            <div className="md:flex md:flex-row md:items-center md:justify-between mb-4">
               <h2 className="text-xl font-semibold">Your Event Sessions</h2>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -2004,6 +2015,14 @@ export default function Home() {
                   Create Event
                 </button>
               </div>
+            </div>
+            <div className="hidden md:block mb-4 rounded-xl border border-indigo-200/70 dark:border-indigo-700/40 bg-gradient-to-r from-indigo-50 to-cyan-50 dark:from-indigo-950/40 dark:to-cyan-950/30 p-3">
+              <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                Build trust with verifiable deposits and clear participant outcomes.
+              </p>
+              <p className="text-xs app-muted mt-1">
+                Keep event intake smooth while preserving payment integrity for every participant.
+              </p>
             </div>
             <div className="hidden md:grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
               <label className="text-sm">
