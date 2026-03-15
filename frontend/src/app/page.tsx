@@ -1945,15 +1945,6 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="mt-3 rounded-xl border border-indigo-200/70 dark:border-indigo-700/40 bg-gradient-to-r from-indigo-50 to-cyan-50 dark:from-indigo-950/40 dark:to-cyan-950/30 p-3">
-            <p className="text-xs md:text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-              Trusted event deposit operations — verify faster, manage safer.
-            </p>
-            <p className="text-[11px] md:text-xs app-muted mt-1">
-              Every checkout is reference-linked on-chain with clear participant status tracking.
-            </p>
-          </div>
-
           <div className="mt-3 md:hidden space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -2251,7 +2242,7 @@ export default function Home() {
                       <button
                         key={tab}
                         onClick={() => setDetailTab(tab)}
-                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "bg-indigo-600 text-white border-indigo-600" : "app-surface border-slate-300 dark:border-slate-700"}`}
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize border ${detailTab === tab ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface border-slate-300 dark:border-slate-700"}`}
                       >
                         {tab === "info"
                           ? "General Info"
