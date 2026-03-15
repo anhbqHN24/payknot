@@ -259,11 +259,31 @@ a:focus-visible {
   background: #2c2c2c !important;
   border-color: #81d4fa !important;
   color: #f8f9fa !important;
+  box-shadow: 0 0 0 1px rgba(129, 212, 250, 0.28);
 }
 
 .dark .tab-active:hover,
 .dark .tab-active:focus-visible {
   box-shadow: 0 0 0 3px rgba(129, 212, 250, 0.22);
+}
+
+.dark button:not(:disabled):not(.bg-indigo-600):not(.bg-red-600):not(.bg-amber-500) {
+  background-color: #171a26;
+  border-color: #2a2f45;
+  color: #e8eaf7;
+}
+
+.dark button:not(:disabled):not(.bg-indigo-600):not(.bg-red-600):not(.bg-amber-500):hover {
+  background-color: #202336;
+  border-color: #3a4160;
+}
+
+button {
+  transition: transform 120ms ease, box-shadow 160ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
 }
 
 .blur-mask {

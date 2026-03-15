@@ -1241,7 +1241,7 @@ export default function Home() {
                 <button
                   onClick={importLumaEvent}
                   disabled={importingLuma}
-                  className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-60"
+                  className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm disabled:opacity-60"
                 >
                   {importingLuma ? "..." : "Import"}
                 </button>
@@ -1500,7 +1500,7 @@ export default function Home() {
           </label>
           <button
             onClick={addParticipantField}
-            className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm"
+            className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm"
           >
             Add field
           </button>
@@ -1584,7 +1584,7 @@ export default function Home() {
         </div>
       </div>
       <div
-        className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 bg-white/95 backdrop-blur" : "bg-white"}`}
+        className={`border-t border-slate-200 -mx-3 px-3 py-2 flex items-center gap-2 ${isMobile ? "sticky bottom-0 app-surface backdrop-blur" : "app-surface"}`}
       >
         <button
           disabled={checkoutFormPage <= 1}
@@ -1802,19 +1802,19 @@ export default function Home() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setAuthMode("login")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "bg-slate-900 text-white" : "bg-white"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "login" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Login
               </button>
               <button
                 onClick={() => setAuthMode("register")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "bg-slate-900 text-white" : "bg-white"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "register" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Register
               </button>
               <button
                 onClick={() => setAuthMode("forgot")}
-                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "bg-slate-900 text-white" : "bg-white"}`}
+                className={`px-3 py-1.5 rounded-lg border ${authMode === "forgot" ? "tab-active bg-indigo-600 text-white border-indigo-600" : "app-surface"}`}
               >
                 Forgot Password
               </button>
@@ -1853,7 +1853,7 @@ export default function Home() {
               )}
               <button
                 disabled={authSubmitting}
-                className="w-full rounded-lg bg-slate-900 text-white py-2.5 font-semibold disabled:opacity-60"
+                className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 font-semibold disabled:opacity-60"
               >
                 {authSubmitting
                   ? "Please wait..."
@@ -2286,7 +2286,7 @@ export default function Home() {
                   )}
                 </div>
 
-                <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 dark:border-slate-700 app-surface px-4 py-3">
+                <div className="sticky bottom-0 z-20 border-t border-slate-200 dark:border-slate-700 app-surface px-4 py-3">
                   {detailMode === "edit" && hasPaidDeposits && (
                     <p className="mb-2 text-xs text-amber-700">
                       This event already has successful deposits. Edit/Delete is
@@ -2437,7 +2437,6 @@ export default function Home() {
             )}
           </div>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
     </main>
   );
