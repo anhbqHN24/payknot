@@ -235,6 +235,12 @@ function CheckoutInner() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  const hasActiveSession = useMemo(() => {
+    if (!reference) return false;
+    const status = (statusData?.status || "pending_payment").toLowerCase();
+    return !["paid", "failed", "cancelled", "rejected", "approved"].includes(status);
+  }, [reference, statusData?.status]);
+
   useEffect(() => {
     const cancelPayload = reference
       ? new Blob([JSON.stringify({ reference })], {
@@ -319,12 +325,6 @@ function CheckoutInner() {
     setSessionMethod(null);
     setTimeLeft(null);
   };
-
-  const hasActiveSession = useMemo(() => {
-    if (!reference) return false;
-    const status = (statusData?.status || "pending_payment").toLowerCase();
-    return !["paid", "failed", "cancelled", "rejected", "approved"].includes(status);
-  }, [reference, statusData?.status]);
 
   const cancelCurrentSession = async () => {
     if (!reference) return;
