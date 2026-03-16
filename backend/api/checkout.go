@@ -21,6 +21,7 @@ type CheckoutEventResponse struct {
 	Description         string             `json:"description"`
 	EventImageURL       string             `json:"eventImageUrl"`
 	EventDate           string             `json:"eventDate"`
+	CheckoutExpiresAt   string             `json:"checkoutExpiresAt"`
 	Location            string             `json:"location"`
 	OrganizerName       string             `json:"organizerName"`
 	MerchantWallet      string             `json:"merchantWallet"`
@@ -100,20 +101,24 @@ func GetCheckoutBySlug(w http.ResponseWriter, r *http.Request) {
 
 	var resp CheckoutEventResponse
 	var eventDate *time.Time
+	var checkoutExpiresAt *time.Time
 	var formJSON []byte
 	var methodsJSON []byte
 	err := database.DB.QueryRow(`
-		SELECT slug, title, description, event_image_url, event_date, location, organizer_name, merchant_wallet, amount_usdc,
+		SELECT slug, title, description, event_image_url, event_date, checkout_expires_at, location, organizer_name, merchant_wallet, amount_usdc,
 		       participant_form_schema, payment_methods
 		FROM events
-		WHERE slug = $1 AND status = 'active' AND checkout_expires_at > NOW()
-	`, slug).Scan(&resp.Slug, &resp.Title, &resp.Description, &resp.EventImageURL, &eventDate, &resp.Location, &resp.OrganizerName, &resp.MerchantWallet, &resp.AmountRaw, &formJSON, &methodsJSON)
+		WHERE slug = $1 AND status = 'active'
+	`, slug).Scan(&resp.Slug, &resp.Title, &resp.Description, &resp.EventImageURL, &eventDate, &checkoutExpiresAt, &resp.Location, &resp.OrganizerName, &resp.MerchantWallet, &resp.AmountRaw, &formJSON, &methodsJSON)
 	if err != nil {
 		http.Error(w, "event not found", http.StatusNotFound)
 		return
 	}
 	if eventDate != nil {
 		resp.EventDate = eventDate.Format(time.RFC3339)
+	}
+	if checkoutExpiresAt != nil {
+		resp.CheckoutExpiresAt = checkoutExpiresAt.UTC().Format(time.RFC3339)
 	}
 	resp.AmountUSDC = fmt.Sprintf("%.2f", float64(resp.AmountRaw)/1_000_000)
 	resp.Network = networkFromMint()
@@ -150,15 +155,20 @@ func CreateCheckoutInvoice(w http.ResponseWriter, r *http.Request) {
 	var eventID int64
 	var amount int64
 	var merchantWallet string
+	var checkoutExpiresAt *time.Time
 	var formJSON []byte
 	var methodsJSON []byte
 	err := database.DB.QueryRow(`
-		SELECT id, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+		SELECT id, amount_usdc, merchant_wallet, checkout_expires_at, participant_form_schema, payment_methods
 		FROM events
 		WHERE slug = $1 AND status = 'active'
-	`, req.Slug).Scan(&eventID, &amount, &merchantWallet, &formJSON, &methodsJSON)
+	`, req.Slug).Scan(&eventID, &amount, &merchantWallet, &checkoutExpiresAt, &formJSON, &methodsJSON)
 	if err != nil {
 		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	if checkoutExpiresAt != nil && checkoutExpiresAt.Before(time.Now().UTC()) {
+		http.Error(w, "Checkout has expired", http.StatusGone)
 		return
 	}
 

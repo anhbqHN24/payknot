@@ -27,6 +27,7 @@ type EventData = {
   description: string;
   eventImageUrl: string;
   eventDate: string;
+  checkoutExpiresAt?: string;
   location: string;
   organizerName: string;
   merchantWallet: string;
@@ -234,9 +235,53 @@ function CheckoutInner() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  const hasActiveSession = useMemo(() => {
+    if (!reference) return false;
+    const status = (statusData?.status || "pending_payment").toLowerCase();
+    return !["paid", "failed", "cancelled", "rejected", "approved"].includes(status);
+  }, [reference, statusData?.status]);
+
+  useEffect(() => {
+    const cancelPayload = reference
+      ? new Blob([JSON.stringify({ reference })], {
+          type: "application/json",
+        })
+      : null;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasActiveSession || !reference) return;
+      if (cancelPayload) {
+        navigator.sendBeacon("/api/checkout/cancel", cancelPayload);
+      }
+      localStorage.removeItem(storageKey);
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const onPageHide = () => {
+      if (!hasActiveSession || !reference) return;
+      if (cancelPayload) {
+        navigator.sendBeacon("/api/checkout/cancel", cancelPayload);
+      }
+      localStorage.removeItem(storageKey);
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [hasActiveSession, reference, storageKey]);
+
   const displayDate = useMemo(() => {
     if (!eventData?.eventDate) return "";
     return new Date(eventData.eventDate).toLocaleString();
+  }, [eventData]);
+
+  const isCheckoutExpired = useMemo(() => {
+    if (!eventData?.checkoutExpiresAt) return false;
+    return new Date(eventData.checkoutExpiresAt).getTime() <= Date.now();
   }, [eventData]);
 
   const availableMethods = useMemo(() => {
@@ -276,7 +321,32 @@ function CheckoutInner() {
   const clearPending = () => {
     localStorage.removeItem(storageKey);
     setActiveSessionId("");
+    setReference("");
+    setSessionMethod(null);
     setTimeLeft(null);
+  };
+
+  const cancelCurrentSession = async () => {
+    if (!reference) return;
+    try {
+      if (activeSessionId) {
+        await fetch(`/api/v1/payment-sessions/${activeSessionId}/cancel`, {
+          method: "POST",
+          keepalive: true,
+        });
+      }
+      await fetch("/api/checkout/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference }),
+        keepalive: true,
+      });
+    } catch {
+      // best effort on cancel
+    }
+    clearPending();
+    setStatusData(null);
+    setStep(0);
   };
 
   const validateStep1 = () => {
@@ -452,6 +522,8 @@ function CheckoutInner() {
           });
         }
         clearPending();
+        setStatusData(null);
+        setShowFullSignature(false);
       }
       setError(err instanceof Error ? err.message : "Payment failed");
     } finally {
@@ -811,17 +883,24 @@ function CheckoutInner() {
         )}
       </section>
 
-      <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
-        <Steps
-          current={step}
-          direction="horizontal"
-          items={[
-            { title: "Participant Info" },
-            { title: "Payment Method" },
-            { title: "Pay & Receipt" },
-          ]}
-        />
-      </div>
+      {isCheckoutExpired ? (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-sm text-amber-800 dark:text-amber-300">
+          This checkout has expired. New payments are disabled, but you can still use
+          transaction lookup and receipt display below.
+        </div>
+      ) : (
+        <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
+          <Steps
+            current={step}
+            direction="horizontal"
+            items={[
+              { title: "Participant Info" },
+              { title: "Payment Method" },
+              { title: "Pay & Receipt" },
+            ]}
+          />
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
@@ -829,7 +908,7 @@ function CheckoutInner() {
         </div>
       )}
 
-      {step === 0 && (
+      {!isCheckoutExpired && step === 0 && (
         <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">
             Step 1: Participant Form
@@ -895,7 +974,7 @@ function CheckoutInner() {
         </section>
       )}
 
-      {step === 1 && (
+      {!isCheckoutExpired && step === 1 && (
         <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">Step 2: Payment Method</h2>
           <p className="mb-2 text-sm text-slate-600">
@@ -904,7 +983,10 @@ function CheckoutInner() {
           <Select
             value={paymentMethod}
             className="w-full max-w-xs"
-            onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+            onChange={(v) => {
+              setPaymentMethod(v as PaymentMethod);
+              setError("");
+            }}
             options={availableMethods}
           />
           <div className="mt-4 flex gap-2">
@@ -917,6 +999,10 @@ function CheckoutInner() {
             <button
               className="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-white"
               onClick={() => {
+                clearPending();
+                setStatusData(null);
+                setShowFullSignature(false);
+                setError("");
                 setSessionMethod(paymentMethod);
                 setStep(2);
               }}
@@ -927,7 +1013,7 @@ function CheckoutInner() {
         </section>
       )}
 
-      {step === 2 && (
+      {(step === 2 || isCheckoutExpired) && (
         <section
           ref={step3SectionRef}
           className={`mt-4 rounded-xl border p-4 transition-all ${
@@ -935,15 +1021,17 @@ function CheckoutInner() {
           }`}
         >
           <h2 className="mb-3 text-lg font-semibold">Step 3: Pay & Receipt</h2>
-          <p className="mb-3 text-sm text-slate-600">
-            Method: {methodLabel(chosenMethod)}
-          </p>
+          {!isCheckoutExpired && (
+            <p className="mb-3 text-sm text-slate-600">
+              Method: {methodLabel(chosenMethod)}
+            </p>
+          )}
 
-          {chosenMethod === "wallet" &&
+          {!isCheckoutExpired && chosenMethod === "wallet" &&
             reference &&
             timeLeft !== null &&
             !isPaid && (
-              <div className="mb-4 rounded border bg-amber-50 p-3 text-sm">
+              <div className="mb-4 rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700 p-3 text-sm text-amber-900 dark:text-amber-100">
                 <p>
                   Session reference:{" "}
                   <span className="font-mono">{reference}</span>
@@ -960,7 +1048,7 @@ function CheckoutInner() {
               </div>
             )}
 
-          {chosenMethod === "wallet" ? (
+          {!isCheckoutExpired && (chosenMethod === "wallet" ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4 shadow-sm">
               <p className="mb-3 text-sm text-slate-600">
                 Connect your wallet and pay your event deposit in one flow.
@@ -999,7 +1087,7 @@ function CheckoutInner() {
                 {loadingPay ? "Creating session..." : "Open QR Payment Window"}
               </button>
             </div>
-          )}
+          ))}
 
           {(statusData?.reference ||
             statusData?.status ||
@@ -1075,11 +1163,26 @@ function CheckoutInner() {
             </div>
           )}
 
-          {!isPaid && (
+          {!isCheckoutExpired && !isPaid && (
             <div className="mt-4">
               <button
                 className="rounded border px-4 py-2"
-                onClick={() => setStep(1)}
+                onClick={async () => {
+                  if (hasActiveSession) {
+                    const ok = window.confirm(
+                      "You have an active payment session. Going back will cancel this session. Continue?",
+                    );
+                    if (!ok) return;
+                    await cancelCurrentSession();
+                    setStep(1);
+                    return;
+                  }
+                  clearPending();
+                  setStatusData(null);
+                  setShowFullSignature(false);
+                  setError("");
+                  setStep(1);
+                }}
               >
                 Back
               </button>
