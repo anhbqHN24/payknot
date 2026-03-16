@@ -1165,11 +1165,10 @@ function CheckoutInner() {
                     );
                     if (!ok) return;
                     await cancelCurrentSession();
+                    setStep(1);
                     return;
                   }
-                  clearPending();
-                  setStatusData(null);
-                  setStep(0);
+                  setStep(1);
                 }}
               >
                 Back
