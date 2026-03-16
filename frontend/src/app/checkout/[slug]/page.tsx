@@ -958,7 +958,7 @@ function CheckoutInner() {
             reference &&
             timeLeft !== null &&
             !isPaid && (
-              <div className="mb-4 rounded border bg-amber-50 p-3 text-sm">
+              <div className="mb-4 rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700 p-3 text-sm text-amber-900 dark:text-amber-100">
                 <p>
                   Session reference:{" "}
                   <span className="font-mono">{reference}</span>
