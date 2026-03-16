@@ -235,6 +235,39 @@ function CheckoutInner() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  useEffect(() => {
+    const cancelPayload = reference
+      ? new Blob([JSON.stringify({ reference })], {
+          type: "application/json",
+        })
+      : null;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasActiveSession || !reference) return;
+      if (cancelPayload) {
+        navigator.sendBeacon("/api/checkout/cancel", cancelPayload);
+      }
+      localStorage.removeItem(storageKey);
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const onPageHide = () => {
+      if (!hasActiveSession || !reference) return;
+      if (cancelPayload) {
+        navigator.sendBeacon("/api/checkout/cancel", cancelPayload);
+      }
+      localStorage.removeItem(storageKey);
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [hasActiveSession, reference, storageKey]);
+
   const displayDate = useMemo(() => {
     if (!eventData?.eventDate) return "";
     return new Date(eventData.eventDate).toLocaleString();
@@ -282,7 +315,38 @@ function CheckoutInner() {
   const clearPending = () => {
     localStorage.removeItem(storageKey);
     setActiveSessionId("");
+    setReference("");
+    setSessionMethod(null);
     setTimeLeft(null);
+  };
+
+  const hasActiveSession = useMemo(() => {
+    if (!reference) return false;
+    const status = (statusData?.status || "pending_payment").toLowerCase();
+    return !["paid", "failed", "cancelled", "rejected", "approved"].includes(status);
+  }, [reference, statusData?.status]);
+
+  const cancelCurrentSession = async () => {
+    if (!reference) return;
+    try {
+      if (activeSessionId) {
+        await fetch(`/api/v1/payment-sessions/${activeSessionId}/cancel`, {
+          method: "POST",
+          keepalive: true,
+        });
+      }
+      await fetch("/api/checkout/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference }),
+        keepalive: true,
+      });
+    } catch {
+      // best effort on cancel
+    }
+    clearPending();
+    setStatusData(null);
+    setStep(0);
   };
 
   const validateStep1 = () => {
@@ -1094,7 +1158,19 @@ function CheckoutInner() {
             <div className="mt-4">
               <button
                 className="rounded border px-4 py-2"
-                onClick={() => setStep(1)}
+                onClick={async () => {
+                  if (hasActiveSession) {
+                    const ok = window.confirm(
+                      "You have an active payment session. Going back will cancel this session. Continue?",
+                    );
+                    if (!ok) return;
+                    await cancelCurrentSession();
+                    return;
+                  }
+                  clearPending();
+                  setStatusData(null);
+                  setStep(0);
+                }}
               >
                 Back
               </button>
