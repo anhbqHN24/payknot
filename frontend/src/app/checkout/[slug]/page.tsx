@@ -522,6 +522,8 @@ function CheckoutInner() {
           });
         }
         clearPending();
+        setStatusData(null);
+        setShowFullSignature(false);
       }
       setError(err instanceof Error ? err.message : "Payment failed");
     } finally {
@@ -981,7 +983,10 @@ function CheckoutInner() {
           <Select
             value={paymentMethod}
             className="w-full max-w-xs"
-            onChange={(v) => setPaymentMethod(v as PaymentMethod)}
+            onChange={(v) => {
+              setPaymentMethod(v as PaymentMethod);
+              setError("");
+            }}
             options={availableMethods}
           />
           <div className="mt-4 flex gap-2">
@@ -994,6 +999,10 @@ function CheckoutInner() {
             <button
               className="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-white"
               onClick={() => {
+                clearPending();
+                setStatusData(null);
+                setShowFullSignature(false);
+                setError("");
                 setSessionMethod(paymentMethod);
                 setStep(2);
               }}
@@ -1168,6 +1177,10 @@ function CheckoutInner() {
                     setStep(1);
                     return;
                   }
+                  clearPending();
+                  setStatusData(null);
+                  setShowFullSignature(false);
+                  setError("");
                   setStep(1);
                 }}
               >
