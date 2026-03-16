@@ -106,7 +106,7 @@ func GetCheckoutBySlug(w http.ResponseWriter, r *http.Request) {
 		SELECT slug, title, description, event_image_url, event_date, location, organizer_name, merchant_wallet, amount_usdc,
 		       participant_form_schema, payment_methods
 		FROM events
-		WHERE slug = $1 AND status = 'active' AND checkout_expires_at > NOW()
+		WHERE slug = $1 AND status = 'active'
 	`, slug).Scan(&resp.Slug, &resp.Title, &resp.Description, &resp.EventImageURL, &eventDate, &resp.Location, &resp.OrganizerName, &resp.MerchantWallet, &resp.AmountRaw, &formJSON, &methodsJSON)
 	if err != nil {
 		http.Error(w, "event not found", http.StatusNotFound)
