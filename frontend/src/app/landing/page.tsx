@@ -55,13 +55,13 @@ export default function LandingPage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <a
               href="/app"
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
+              className="btn-anim rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
             >
               Get Started
             </a>
             <a
               href="#how-it-works"
-              className="rounded-lg border px-5 py-2.5 font-semibold"
+              className="btn-anim rounded-lg border px-5 py-2.5 font-semibold"
             >
               See How It Works
             </a>
@@ -199,13 +199,13 @@ export default function LandingPage() {
           <div className="mt-5 flex flex-wrap gap-3">
             <a
               href="/app"
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
+              className="btn-anim rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
             >
               Get Started
             </a>
             <a
               href="#how-it-works"
-              className="rounded-lg border px-5 py-2.5 font-semibold"
+              className="btn-anim rounded-lg border px-5 py-2.5 font-semibold"
             >
               See How It Works
             </a>

@@ -286,6 +286,18 @@ button:not(:disabled):active {
   transform: translateY(1px) scale(0.99);
 }
 
+.btn-anim {
+  transition: transform 120ms ease, box-shadow 160ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.btn-anim:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 .blur-mask {
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
