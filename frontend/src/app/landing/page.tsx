@@ -142,9 +142,9 @@ export default function LandingPage() {
               </p>
             </div>
             <div>
-              <h3 className="font-semibold">Do hosts control participant outcomes?</h3>
+              <h3 className="font-semibold">Do organizers get payment observability?</h3>
               <p className="mt-1 text-sm app-muted">
-                Yes. Hosts can review paid deposits and explicitly approve or reject participation.
+                Yes. Organizers can monitor transaction outcomes with clear success and error states for operational visibility.
               </p>
             </div>
           </div>
