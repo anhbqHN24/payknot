@@ -72,25 +72,30 @@ func V1CreatePaymentSession(w http.ResponseWriter, r *http.Request) {
 	var slug string
 	var amount int64
 	var merchantWallet string
+	var checkoutExpiresAt *time.Time
 	var formJSON []byte
 	var methodsJSON []byte
 	var eventID int64
 	var err error
 	if req.EventID > 0 {
 		err = database.DB.QueryRow(`
-			SELECT id, slug, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+			SELECT id, slug, amount_usdc, merchant_wallet, checkout_expires_at, participant_form_schema, payment_methods
 			FROM events
 			WHERE id = $1 AND status = 'active'
-		`, req.EventID).Scan(&eventID, &slug, &amount, &merchantWallet, &formJSON, &methodsJSON)
+		`, req.EventID).Scan(&eventID, &slug, &amount, &merchantWallet, &checkoutExpiresAt, &formJSON, &methodsJSON)
 	} else {
 		err = database.DB.QueryRow(`
-			SELECT id, slug, amount_usdc, merchant_wallet, participant_form_schema, payment_methods
+			SELECT id, slug, amount_usdc, merchant_wallet, checkout_expires_at, participant_form_schema, payment_methods
 			FROM events
 			WHERE slug = $1 AND status = 'active'
-		`, req.Slug).Scan(&eventID, &slug, &amount, &merchantWallet, &formJSON, &methodsJSON)
+		`, req.Slug).Scan(&eventID, &slug, &amount, &merchantWallet, &checkoutExpiresAt, &formJSON, &methodsJSON)
 	}
 	if err != nil {
 		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	if checkoutExpiresAt != nil && checkoutExpiresAt.Before(time.Now().UTC()) {
+		http.Error(w, "Checkout has expired", http.StatusGone)
 		return
 	}
 

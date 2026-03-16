@@ -27,6 +27,7 @@ type EventData = {
   description: string;
   eventImageUrl: string;
   eventDate: string;
+  checkoutExpiresAt?: string;
   location: string;
   organizerName: string;
   merchantWallet: string;
@@ -237,6 +238,11 @@ function CheckoutInner() {
   const displayDate = useMemo(() => {
     if (!eventData?.eventDate) return "";
     return new Date(eventData.eventDate).toLocaleString();
+  }, [eventData]);
+
+  const isCheckoutExpired = useMemo(() => {
+    if (!eventData?.checkoutExpiresAt) return false;
+    return new Date(eventData.checkoutExpiresAt).getTime() <= Date.now();
   }, [eventData]);
 
   const availableMethods = useMemo(() => {
@@ -811,17 +817,24 @@ function CheckoutInner() {
         )}
       </section>
 
-      <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
-        <Steps
-          current={step}
-          direction="horizontal"
-          items={[
-            { title: "Participant Info" },
-            { title: "Payment Method" },
-            { title: "Pay & Receipt" },
-          ]}
-        />
-      </div>
+      {isCheckoutExpired ? (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-sm text-amber-800 dark:text-amber-300">
+          This checkout has expired. New payments are disabled, but you can still use
+          transaction lookup and receipt display below.
+        </div>
+      ) : (
+        <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
+          <Steps
+            current={step}
+            direction="horizontal"
+            items={[
+              { title: "Participant Info" },
+              { title: "Payment Method" },
+              { title: "Pay & Receipt" },
+            ]}
+          />
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
@@ -829,7 +842,7 @@ function CheckoutInner() {
         </div>
       )}
 
-      {step === 0 && (
+      {!isCheckoutExpired && step === 0 && (
         <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">
             Step 1: Participant Form
@@ -895,7 +908,7 @@ function CheckoutInner() {
         </section>
       )}
 
-      {step === 1 && (
+      {!isCheckoutExpired && step === 1 && (
         <section className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4">
           <h2 className="mb-3 text-lg font-semibold">Step 2: Payment Method</h2>
           <p className="mb-2 text-sm text-slate-600">
@@ -927,7 +940,7 @@ function CheckoutInner() {
         </section>
       )}
 
-      {step === 2 && (
+      {(step === 2 || isCheckoutExpired) && (
         <section
           ref={step3SectionRef}
           className={`mt-4 rounded-xl border p-4 transition-all ${
@@ -935,11 +948,13 @@ function CheckoutInner() {
           }`}
         >
           <h2 className="mb-3 text-lg font-semibold">Step 3: Pay & Receipt</h2>
-          <p className="mb-3 text-sm text-slate-600">
-            Method: {methodLabel(chosenMethod)}
-          </p>
+          {!isCheckoutExpired && (
+            <p className="mb-3 text-sm text-slate-600">
+              Method: {methodLabel(chosenMethod)}
+            </p>
+          )}
 
-          {chosenMethod === "wallet" &&
+          {!isCheckoutExpired && chosenMethod === "wallet" &&
             reference &&
             timeLeft !== null &&
             !isPaid && (
@@ -960,7 +975,7 @@ function CheckoutInner() {
               </div>
             )}
 
-          {chosenMethod === "wallet" ? (
+          {!isCheckoutExpired && (chosenMethod === "wallet" ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 app-surface p-4 shadow-sm">
               <p className="mb-3 text-sm text-slate-600">
                 Connect your wallet and pay your event deposit in one flow.
@@ -999,7 +1014,7 @@ function CheckoutInner() {
                 {loadingPay ? "Creating session..." : "Open QR Payment Window"}
               </button>
             </div>
-          )}
+          ))}
 
           {(statusData?.reference ||
             statusData?.status ||
@@ -1075,7 +1090,7 @@ function CheckoutInner() {
             </div>
           )}
 
-          {!isPaid && (
+          {!isCheckoutExpired && !isPaid && (
             <div className="mt-4">
               <button
                 className="rounded border px-4 py-2"
