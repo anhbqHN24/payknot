@@ -100,11 +100,9 @@ export default function LandingPage() {
           <div className="mt-6 rounded-xl border p-4">
             <p className="text-sm font-semibold">Status pipeline example</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="status-badge pending_payment">
-                pending_payment
-              </span>
-              <span className="status-badge paid">paid</span>
-              <span className="status-badge rejected">error</span>
+              <span className="status-badge pending_payment">Pending</span>
+              <span className="status-badge paid">Paid</span>
+              <span className="status-badge rejected">Error</span>
             </div>
           </div>
         </section>

@@ -85,6 +85,18 @@ function methodLabel(method?: string) {
   return method === "qr" ? "QR code" : "Wallet connection";
 }
 
+function humanizeStatus(status?: string) {
+  const s = (status || "pending_payment").toLowerCase();
+  if (s === "pending_payment") return "Pending";
+  if (s === "paid") return "Paid";
+  if (s === "error" || s === "failed" || s === "cancelled") return "Error";
+  return s
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function looksLikeHtml(value: string) {
   return /<[^>]+>/.test(value || "");
 }
@@ -1102,7 +1114,7 @@ function CheckoutInner() {
               <p className="flex items-center gap-2">
                 Status:
                 <span className={checkoutStatusClass(statusData?.status)}>
-                  {(statusData?.status || "pending_payment").replaceAll("_", " ")}
+                  {humanizeStatus(statusData?.status)}
                 </span>
               </p>
               <p>
