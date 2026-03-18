@@ -77,48 +77,16 @@ const faqItems = [
   },
 ];
 
-const navTabs = [
-  { id: "problem", label: "Problem" },
-  { id: "how-it-works", label: "How it works" },
-  { id: "fit", label: "Fit" },
-  { id: "credibility", label: "Credibility" },
-  { id: "faq", label: "FAQ" },
-];
-
 import Image from "next/image";
+import Header from "@/components/Header";
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen app-bg text-[var(--app-fg)]">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:py-12 space-y-8 md:space-y-10">
-        <div className="sticky top-2 z-30 rounded-2xl border bg-white/90 shadow-sm flex items-center justify-between px-3 py-1 md:px-4 md:py-2">
-          <div className="flex items-center">
-            <Image
-              src="/payknot_nontext.svg"
-              alt="Payknot"
-              width={40}
-              height={40}
-              className="h-9 w-9"
-            />
-            <a href="#home" className="text-2xl font-bold text-primary">
-              Payknot
-            </a>
-          </div>
+        <Header />
 
-          <nav className="flex flex-wrap gap-2">
-            {navTabs.map((tab) => (
-              <a
-                key={tab.id}
-                href={`#${tab.id}`}
-                className="btn-anim rounded-lg border px-3 py-1.5 text-xs md:text-sm font-medium"
-              >
-                {tab.label}
-              </a>
-            ))}
-          </nav>
-        </div>
-
-        <section className="relative overflow-hidden rounded-3xl border shadow-sm">
+        <section className="relative overflow-hidden rounded-3xl border shadow-sm app-surface">
           <div className="absolute inset-0">
             <img
               src="https://images.unsplash.com/photo-1668788142072-44bd6c902e5f?auto=format&fit=crop&w=1800&q=80"
@@ -141,7 +109,7 @@ export default function LandingPage() {
                 auditable, reference-linked transaction visibility. Built for
                 trust-first operations, not hype-first marketing.
               </p>
-              <div className="mt-6 flex flex-wrap gap-3">
+              <div className="mt-6 grid gap-2 md:flex md:flex-wrap md:gap-3 text-center">
                 <a
                   href="/app"
                   className="btn-anim rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
@@ -195,7 +163,7 @@ export default function LandingPage() {
 
         <section
           id="problem"
-          className="grid gap-4 md:grid-cols-3 scroll-mt-24"
+          className="grid gap-4 md:grid-cols-3 scroll-mt-[20rem] md:scroll-mt-24"
         >
           {painPoints.map((item) => (
             <article
@@ -210,7 +178,7 @@ export default function LandingPage() {
 
         <section
           id="how-it-works"
-          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-24"
+          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-[20rem] md:scroll-mt-24"
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <h2 className="text-2xl font-semibold">How it works</h2>
@@ -223,7 +191,7 @@ export default function LandingPage() {
             {howItWorks.map((item) => (
               <article
                 key={item.step}
-                className="overflow-hidden rounded-2xl border"
+                className="overflow-hidden rounded-2xl border app-surface"
               >
                 <div className="aspect-video bg-slate-200/40 dark:bg-slate-900/40">
                   <video
@@ -248,7 +216,10 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="fit" className="grid gap-4 md:grid-cols-2 scroll-mt-24">
+        <section
+          id="fit"
+          className="grid gap-4 md:grid-cols-2 scroll-mt-[20rem] md:scroll-mt-24"
+        >
           <article className="rounded-2xl border app-surface p-5 shadow-sm">
             <h2 className="text-base font-semibold">Where Payknot fits</h2>
             <ul className="mt-3 list-disc pl-4 space-y-2 text-sm app-muted">
@@ -276,7 +247,7 @@ export default function LandingPage() {
 
         <section
           id="credibility"
-          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-24"
+          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-[20rem] md:scroll-mt-24"
         >
           <h2 className="text-2xl font-semibold">Credibility, not noise</h2>
           <p className="mt-3 max-w-3xl text-sm md:text-base app-muted">
@@ -289,7 +260,7 @@ export default function LandingPage() {
 
         <section
           id="faq"
-          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-24"
+          className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm scroll-mt-[20rem] md:scroll-mt-24"
         >
           <h2 className="text-2xl font-semibold">FAQ</h2>
           <div className="mt-5 space-y-4">
@@ -310,7 +281,7 @@ export default function LandingPage() {
             Start with one event, one checkout link, and one trustworthy payment
             lifecycle.
           </p>
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-5 grid gap-2 md:flex md:flex-wrap md:gap-3 text-center">
             <a
               href="/app"
               className="btn-anim rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
