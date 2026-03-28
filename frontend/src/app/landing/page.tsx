@@ -117,6 +117,12 @@ export default function LandingPage() {
                   Get Started
                 </a>
                 <a
+                  href="/agents"
+                  className="btn-anim rounded-lg border border-cyan-300/60 bg-cyan-400/10 text-white hover:bg-cyan-400/20 px-5 py-2.5 font-semibold"
+                >
+                  Agent Guide
+                </a>
+                <a
                   href="#how-it-works"
                   className="btn-anim rounded-lg border border-white/40 bg-white/10 text-white hover:bg-white/20 px-5 py-2.5 font-semibold"
                 >
@@ -256,6 +262,49 @@ export default function LandingPage() {
             observability around payment outcomes. The goal is calmer event
             operations, not vanity metrics.
           </p>
+        </section>
+
+        <section className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm">
+          <div className="grid gap-5 md:grid-cols-[1fr_0.9fr] md:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-600">
+                Agents
+              </p>
+              <h2 className="mt-3 text-2xl md:text-3xl font-semibold">
+                Dedicated guidance for AI agent usage
+              </h2>
+              <p className="mt-3 text-sm md:text-base app-muted">
+                If you want Codex, MCP-style runtimes, or backend automations to
+                operate Payknot correctly, do not drop them straight into the
+                dashboard. Use the dedicated agent guide, bootstrap with PAT,
+                and move payment automation into the signed session flow.
+              </p>
+              <div className="mt-5 grid gap-2 md:flex md:flex-wrap md:gap-3 text-center">
+                <a
+                  href="/agents"
+                  className="btn-anim rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 font-semibold"
+                >
+                  Open Agent Guide
+                </a>
+                <a
+                  href="/agents/skill.md"
+                  className="btn-anim rounded-lg border px-5 py-2.5 font-semibold"
+                >
+                  View Skill.md
+                </a>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-sm font-semibold">Recommended flow</p>
+              <ol className="mt-4 space-y-3 text-sm app-muted list-decimal pl-4">
+                <li>Enable Agent Security Mode in the dashboard.</li>
+                <li>Create PAT for bootstrap.</li>
+                <li>Generate ephemeral Ed25519 runtime keypair.</li>
+                <li>Exchange PAT for signed runtime JWT.</li>
+                <li>Use signed session for payment-impacting automation.</li>
+              </ol>
+            </div>
+          </div>
         </section>
 
         <section

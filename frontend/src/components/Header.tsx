@@ -8,6 +8,7 @@ const navTabs = [
   { id: "fit", label: "Fit" },
   { id: "credibility", label: "Credibility" },
   { id: "faq", label: "FAQ" },
+  { href: "/agents", label: "Agents" },
 ];
 
 export default function Header() {
@@ -36,8 +37,8 @@ export default function Header() {
           <div className="hidden md:flex items-center space-x-1">
             {navTabs.map((tab) => (
               <a
-                key={tab.id}
-                href={`#${tab.id}`}
+                key={tab.id ?? tab.href}
+                href={tab.href ?? `#${tab.id}`}
                 className="btn-anim rounded-lg border border-transparent hover:border-[var(--app-border)] px-3 py-1.5 text-sm font-medium"
               >
                 {tab.label}
@@ -79,8 +80,8 @@ export default function Header() {
         <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
           {navTabs.map((tab) => (
             <a
-              key={tab.id}
-              href={`#${tab.id}`}
+              key={tab.id ?? tab.href}
+              href={tab.href ?? `#${tab.id}`}
               onClick={toggleMenu}
               className="block rounded-lg px-3 py-2 text-base font-medium app-muted hover:app-fg"
             >

@@ -27,8 +27,10 @@ func main() {
 	http.HandleFunc("/api/events", middleware.RequireAuthOrAgentKey(api.EventsRoot))
 	http.HandleFunc("/api/events/", middleware.RequireAuthOrAgentKey(api.EventsSubroutes))
 	http.HandleFunc("/api/events/import/luma", middleware.RequireAuthOrAgentKey(api.ImportLumaEvent))
-	http.HandleFunc("/api/agent-keys", middleware.RequireAuth(api.AgentKeysRoot))
-	http.HandleFunc("/api/agent-keys/revoke", middleware.RequireAuth(api.RevokeAgentKey))
+	http.HandleFunc("/api/agent-keys", middleware.RequireSessionAuth(api.AgentKeysRoot))
+	http.HandleFunc("/api/agent-keys/revoke", middleware.RequireSessionAuth(api.RevokeAgentKey))
+	http.HandleFunc("/api/agent/pats", middleware.RequireSessionAuth(api.AgentPATsRoot))
+	http.HandleFunc("/api/agent/pats/revoke", middleware.RequireSessionAuth(api.RevokeAgentPAT))
 	http.HandleFunc("/api/checkout/invoice", api.CreateCheckoutInvoice)
 	http.HandleFunc("/api/checkout/cancel", api.CancelCheckoutInvoice)
 	http.HandleFunc("/api/checkout/confirm", api.ConfirmCheckoutPayment)
@@ -43,7 +45,9 @@ func main() {
 	// Agent nonce/JWT auth + settlement automation
 	http.HandleFunc("/api/agent/auth/nonce", api.AgentAuthNonce)
 	http.HandleFunc("/api/agent/auth/token", api.AgentAuthToken)
-	http.HandleFunc("/api/agent/checkout/create", middleware.RequireAgentJWT(api.AgentCheckoutCreate))
+	http.HandleFunc("/api/agent/auth/pat", api.AgentAuthPAT)
+	http.HandleFunc("/api/agent/auth/me", middleware.RequireAgentJWT(api.AgentAuthMe))
+	http.HandleFunc("/api/agent/checkout/create", middleware.RequireAgentSignedSession(api.AgentCheckoutCreate))
 
 	// Headless v1 API (server-owned session state)
 	http.HandleFunc("/api/v1/payment-sessions", api.V1CreatePaymentSession)

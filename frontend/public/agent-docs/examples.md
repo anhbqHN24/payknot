@@ -1,5 +1,47 @@
 # Agent Integration Examples
 
+## 0) Happy path: PAT host bootstrap
+
+1. Host creates PAT via `POST /api/agent/pats`.
+2. Agent stores returned `token` securely.
+3. `GET /api/auth/me` with `Authorization: Bearer <PAT>`.
+4. `GET /api/events` with `Authorization: Bearer <PAT>`.
+
+Expected result: agent can operate host APIs without cookie auth or request-signature setup.
+
+## 0b) Happy path: PAT -> runtime JWT
+
+1. Generate local ephemeral Ed25519 keypair
+2. `POST /api/agent/auth/pat` with body:
+   - `token`
+   - `session_pubkey`
+   - optional `label`
+3. Receive `access_token`
+4. `GET /api/agent/auth/me` with `Authorization: Bearer <access_token>`
+
+Expected result: bearer token is now bound to the submitted session public key.
+
+## 0c) Happy path: signed payment automation call
+
+1. Complete PAT -> runtime JWT bootstrap
+2. Build canonical request string:
+
+```text
+POST
+/api/agent/checkout/create
+<TS>
+<SHA256_HEX(body)>
+```
+
+3. Sign canonical string with the ephemeral Ed25519 private key
+4. Send:
+   - `Authorization: Bearer <access_token>`
+   - `X-Agent-Timestamp`
+   - `X-Agent-Signature`
+5. `POST /api/agent/checkout/create`
+
+Expected result: payment automation request is accepted only when both JWT and signature are valid.
+
 ## 1) Happy path: agent runtime auth (nonce -> JWT)
 
 1. `GET /api/agent/auth/nonce?agent_pubkey=<base58_pubkey>`
@@ -66,6 +108,8 @@ Expected result: state transitions to `paid` and response includes receipt/refer
 3. On success receive:
    - `tx_signature`
    - `explorer_url`
+
+This endpoint now requires a signed runtime session for security-sensitive automation.
 
 ## 6) Failure path: policy rejection
 

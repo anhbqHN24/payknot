@@ -7,6 +7,8 @@ Machine-readable:
 - `/openapi.json`
 - `/.well-known/agent.json`
 - `/.well-known/agent-integration.json`
+- `/agents/skill.md`
+- `/agents/heartbeat.md`
 
 Core implementation docs:
 - [SKILL.md](./SKILL.md)

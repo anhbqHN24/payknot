@@ -71,6 +71,26 @@ type CheckoutField = {
 type EventSortField = "title" | "organizerName" | "eventDate" | "amountUsdc";
 type DetailTab = "info" | "checkoutForm" | "deposits";
 
+type AgentPATSummary = {
+  id: string;
+  name: string;
+  tokenHint: string;
+  scope: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  revokedAt?: string;
+};
+
+type AgentKeySummary = {
+  agentId: string;
+  publicKeyBase64: string;
+  active: boolean;
+  createdBy: string;
+  createdAt: string;
+  revokedAt?: string;
+};
+
 const EVENT_PAGE_SIZE = 10;
 
 declare global {
@@ -219,6 +239,18 @@ export default function Home() {
 
   const [checkouts, setCheckouts] = useState<EventCheckoutRow[]>([]);
   const [loadingCheckouts, setLoadingCheckouts] = useState(false);
+  const [agentPats, setAgentPats] = useState<AgentPATSummary[]>([]);
+  const [agentKeys, setAgentKeys] = useState<AgentKeySummary[]>([]);
+  const [agentSecurityMode, setAgentSecurityMode] = useState(false);
+  const [agentSecurityLoading, setAgentSecurityLoading] = useState(false);
+  const [creatingPat, setCreatingPat] = useState(false);
+  const [savingAgentKey, setSavingAgentKey] = useState(false);
+  const [patName, setPatName] = useState("Codex runtime");
+  const [patExpiresInDays, setPatExpiresInDays] = useState("90");
+  const [createdPatValue, setCreatedPatValue] = useState("");
+  const [createdPatName, setCreatedPatName] = useState("");
+  const [agentKeyID, setAgentKeyID] = useState("");
+  const [agentKeyPublicKey, setAgentKeyPublicKey] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -476,6 +508,25 @@ export default function Home() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("payknot-agent-security-mode");
+    setAgentSecurityMode(raw === "true");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "payknot-agent-security-mode",
+      String(agentSecurityMode),
+    );
+  }, [agentSecurityMode]);
+
+  useEffect(() => {
+    if (!currentUser || !agentSecurityMode) return;
+    void loadAgentSecurity();
+  }, [currentUser, agentSecurityMode]);
+
+  useEffect(() => {
     setEventFormErrors({});
     if (!selectedEvent) return;
     fillFormFromEvent(selectedEvent);
@@ -616,6 +667,134 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Failed to load events");
     } finally {
       setLoadingEvents(false);
+    }
+  };
+
+  const loadAgentSecurity = async () => {
+    if (!currentUser) return;
+    setAgentSecurityLoading(true);
+    try {
+      const [patsRes, keysRes] = await Promise.all([
+        fetch("/api/agent/pats", { credentials: "include" }),
+        fetch("/api/agent-keys", { credentials: "include" }),
+      ]);
+      if (!patsRes.ok) throw new Error(await patsRes.text());
+      if (!keysRes.ok) throw new Error(await keysRes.text());
+      const patsData = await patsRes.json();
+      const keysData = await keysRes.json();
+      setAgentPats((patsData.tokens ?? []) as AgentPATSummary[]);
+      setAgentKeys((keysData.agentKeys ?? []) as AgentKeySummary[]);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load agent security settings",
+      );
+    } finally {
+      setAgentSecurityLoading(false);
+    }
+  };
+
+  const createAgentPat = async () => {
+    const nextName = patName.trim();
+    if (!nextName) {
+      void message.error("PAT name is required.");
+      return;
+    }
+    setCreatingPat(true);
+    try {
+      const expires = Number.parseInt(patExpiresInDays, 10);
+      const res = await fetch("/api/agent/pats", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: nextName,
+          expiresInDays: Number.isFinite(expires) ? Math.max(0, expires) : 90,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setCreatedPatValue(String(data.token ?? ""));
+      setCreatedPatName(String(data.name ?? nextName));
+      await loadAgentSecurity();
+      void message.success("PAT created. Copy it now, it is only shown once.");
+    } catch (err) {
+      void message.error(
+        err instanceof Error ? err.message : "Failed to create PAT",
+      );
+    } finally {
+      setCreatingPat(false);
+    }
+  };
+
+  const revokePat = async (tokenID: string) => {
+    const ok = window.confirm("Revoke this PAT?");
+    if (!ok) return;
+    try {
+      const res = await fetch("/api/agent/pats/revoke", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenId: tokenID }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadAgentSecurity();
+      void message.success("PAT revoked.");
+    } catch (err) {
+      void message.error(err instanceof Error ? err.message : "Failed to revoke PAT");
+    }
+  };
+
+  const saveAgentKey = async () => {
+    const nextID = agentKeyID.trim();
+    const nextPublicKey = agentKeyPublicKey.trim();
+    if (!nextID || !nextPublicKey) {
+      void message.error("Agent id and public key are required.");
+      return;
+    }
+    setSavingAgentKey(true);
+    try {
+      const res = await fetch("/api/agent-keys", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: nextID,
+          publicKeyBase64: nextPublicKey,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAgentKeyID("");
+      setAgentKeyPublicKey("");
+      await loadAgentSecurity();
+      void message.success("Agent key saved.");
+    } catch (err) {
+      void message.error(
+        err instanceof Error ? err.message : "Failed to save agent key",
+      );
+    } finally {
+      setSavingAgentKey(false);
+    }
+  };
+
+  const revokeAgentKey = async (agentId: string) => {
+    const ok = window.confirm(`Revoke agent key "${agentId}"?`);
+    if (!ok) return;
+    try {
+      const res = await fetch("/api/agent-keys/revoke", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadAgentSecurity();
+      void message.success("Agent key revoked.");
+    } catch (err) {
+      void message.error(
+        err instanceof Error ? err.message : "Failed to revoke agent key",
+      );
     }
   };
 
@@ -1811,6 +1990,227 @@ export default function Home() {
     </div>
   );
 
+  const renderAgentSecuritySection = () => (
+    <section className="rounded-2xl app-surface border shadow-sm p-3 md:p-6 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Agent Security Modes</h2>
+          <p className="text-sm text-slate-600 mt-1">
+            Use session auth for humans, PAT for bootstrap and low-risk agent
+            work, and signed Ed25519 sessions for payment automation.
+          </p>
+        </div>
+        <button
+          onClick={() => void loadAgentSecurity()}
+          disabled={agentSecurityLoading}
+          className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-60"
+        >
+          {agentSecurityLoading ? "Refreshing..." : "Refresh Security"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-slate-200 p-4 bg-slate-50">
+          <p className="text-sm font-semibold">1. Browser Session</p>
+          <p className="mt-2 text-xs text-slate-600">
+            Best for the dashboard. Human-only flow with cookie session auth.
+          </p>
+        </div>
+        <div className="rounded-xl border border-indigo-200 p-4 bg-indigo-50">
+          <p className="text-sm font-semibold text-indigo-700">
+            2. PAT Bootstrap
+          </p>
+          <p className="mt-2 text-xs text-indigo-900/80">
+            Recommended starting point for agents. Use PAT for host APIs and to
+            bootstrap a short-lived runtime session.
+          </p>
+        </div>
+        <div className="rounded-xl border border-emerald-200 p-4 bg-emerald-50">
+          <p className="text-sm font-semibold text-emerald-700">
+            3. Signed Payment Session
+          </p>
+          <p className="mt-2 text-xs text-emerald-900/80">
+            Required for payment automation. Agent exchanges PAT for a JWT bound
+            to an Ed25519 session key, then signs each sensitive request.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
+        <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Personal Access Tokens</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Use PATs to authenticate host APIs and bootstrap hardened agent
+              sessions. Do not use PAT alone for payment-impacting automation.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_auto] gap-2">
+            <input
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="PAT name"
+              value={patName}
+              onChange={(e) => setPatName(e.target.value)}
+            />
+            <input
+              className="border rounded-lg px-3 py-2 text-sm"
+              type="number"
+              min="0"
+              max="365"
+              value={patExpiresInDays}
+              onChange={(e) => setPatExpiresInDays(e.target.value)}
+              placeholder="Days"
+            />
+            <button
+              onClick={createAgentPat}
+              disabled={creatingPat}
+              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm disabled:opacity-60"
+            >
+              {creatingPat ? "Creating..." : "Create PAT"}
+            </button>
+          </div>
+
+          {createdPatValue && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm font-medium text-amber-800">
+                Newly created PAT: {createdPatName}
+              </p>
+              <p className="text-xs text-amber-700">
+                Copy it now. Payknot does not show the full token again.
+              </p>
+              <div className="rounded border bg-white px-3 py-2 font-mono text-xs break-all">
+                {createdPatValue}
+              </div>
+              <button
+                onClick={() => void copyText(createdPatValue)}
+                className="rounded-lg border px-3 py-1.5 text-xs"
+              >
+                Copy PAT
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {agentPats.length === 0 ? (
+              <p className="text-sm text-slate-500">No PAT created yet.</p>
+            ) : (
+              agentPats.map((token) => (
+                <div
+                  key={token.id}
+                  className="rounded-lg border border-slate-200 p-3 flex flex-wrap items-start justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{token.name}</p>
+                    <p className="font-mono text-xs text-slate-500 mt-1">
+                      {token.tokenHint}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Scope: {token.scope} | Created{" "}
+                      {new Date(token.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Last used:{" "}
+                      {token.lastUsedAt
+                        ? new Date(token.lastUsedAt).toLocaleString()
+                        : "Never"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Status: {token.revokedAt ? "Revoked" : "Active"}
+                    </p>
+                  </div>
+                  {!token.revokedAt && (
+                    <button
+                      onClick={() => void revokePat(token.id)}
+                      className="rounded-lg border px-3 py-1.5 text-xs"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Advanced Agent Keys</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Register long-lived Ed25519 public keys for full signed-agent
+              mode. Use this if you want permanent per-agent cryptographic
+              identity beyond PAT bootstrap.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <input
+              className="border rounded-lg px-3 py-2 text-sm w-full"
+              placeholder="Agent id"
+              value={agentKeyID}
+              onChange={(e) => setAgentKeyID(e.target.value)}
+            />
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm w-full min-h-28"
+              placeholder="Public key (base64)"
+              value={agentKeyPublicKey}
+              onChange={(e) => setAgentKeyPublicKey(e.target.value)}
+            />
+            <button
+              onClick={saveAgentKey}
+              disabled={savingAgentKey}
+              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-60"
+            >
+              {savingAgentKey ? "Saving..." : "Save Agent Key"}
+            </button>
+          </div>
+          <div className="space-y-2">
+            {agentKeys.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No advanced agent keys registered yet.
+              </p>
+            ) : (
+              agentKeys.map((key) => (
+                <div
+                  key={key.agentId}
+                  className="rounded-lg border border-slate-200 p-3 flex flex-wrap items-start justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{key.agentId}</p>
+                    <p className="text-xs text-slate-500 mt-1 break-all">
+                      {key.publicKeyBase64}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Status: {key.active ? "Active" : "Revoked"}
+                    </p>
+                  </div>
+                  {key.active && (
+                    <button
+                      onClick={() => void revokeAgentKey(key.agentId)}
+                      className="rounded-lg border px-3 py-1.5 text-xs"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-semibold">Hardened payment automation flow</p>
+        <pre className="mt-2 overflow-auto rounded-lg border bg-white p-3 text-xs leading-5">
+{`1. Create PAT from this dashboard
+2. Agent generates ephemeral Ed25519 keypair locally
+3. POST /api/agent/auth/pat with { token, session_pubkey, label }
+4. Receive short-lived bearer JWT
+5. Sign sensitive requests with X-Agent-Timestamp + X-Agent-Signature
+6. Call POST /api/agent/checkout/create with JWT + signed request`}
+        </pre>
+      </div>
+    </section>
+  );
+
   if (authLoading) {
     return (
       <main className="min-h-screen app-bg">
@@ -1989,14 +2389,42 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={logout}
-              className="rounded-lg border px-3 py-1.5 md:py-2 text-xs md:text-sm"
-            >
-              Logout
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-3 rounded-full border px-3 py-1.5 text-xs md:text-sm">
+                <span className="font-medium">Agent security mode</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={agentSecurityMode}
+                  onClick={() => {
+                    const next = !agentSecurityMode;
+                    setAgentSecurityMode(next);
+                    if (next) {
+                      setDetailRender(false);
+                      setDetailClosing(false);
+                    }
+                  }}
+                  className={`relative h-6 w-11 rounded-full transition ${
+                    agentSecurityMode ? "bg-indigo-600" : "bg-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${
+                      agentSecurityMode ? "left-[22px]" : "left-0.5"
+                    }`}
+                  />
+                </button>
+              </label>
+              <button
+                onClick={logout}
+                className="rounded-lg border px-3 py-1.5 md:py-2 text-xs md:text-sm"
+              >
+                Logout
+              </button>
+            </div>
           </div>
 
+          {!agentSecurityMode && (
           <div className="mt-3 md:hidden space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -2070,8 +2498,12 @@ export default function Home() {
               </button>
             </div>
           </div>
+          )}
         </section>
 
+        {agentSecurityMode ? (
+          renderAgentSecuritySection()
+        ) : (
         <section className="rounded-2xl app-surface border shadow-sm p-3 md:p-6 space-y-3">
           <div
             ref={sessionsHeaderRef}
@@ -2262,6 +2694,7 @@ export default function Home() {
             </>
           )}
         </section>
+        )}
         {detailRender && (
           <div className="fixed inset-0 z-50">
             <div

@@ -19,6 +19,11 @@ Base: `/api`
   - revokes current session, clears cookie
 
 ## Host Event Management (auth required, supports agent signature auth)
+
+Host auth can now be satisfied by:
+- normal session cookie
+- Personal Access Token (PAT) via `Authorization: Bearer <PAT>`
+- Ed25519 agent signature mode
 - `GET /events`
   - returns current user-owned events (or `owner_email=agent:<agent-id>` for agent signatures)
 - `POST /events`
@@ -44,6 +49,34 @@ Base: `/api`
 - `POST /agent-keys/revoke`
   - body: `{ agentId }`
   - revokes an agent key
+
+## Personal Access Tokens (host session required)
+
+- `GET /agent/pats`
+  - lists PAT metadata for current host account
+- `POST /agent/pats`
+  - body: `{ name, expiresInDays? }`
+  - creates PAT and returns secret token exactly once
+- `POST /agent/pats/revoke`
+  - body: `{ tokenId }`
+  - revokes PAT
+
+## Agent Runtime Auth
+
+- `POST /agent/auth/pat`
+  - body: `{ token, session_pubkey?, label? }`
+  - exchanges PAT for short-lived runtime JWT
+  - when `session_pubkey` is provided, the JWT is bound to that Ed25519 public key for signed payment automation
+- `GET /agent/auth/me`
+  - returns current runtime identity for PAT/JWT auth
+
+## Signed payment automation
+
+- `POST /agent/checkout/create`
+  - requires bearer JWT plus:
+    - `X-Agent-Timestamp`
+    - `X-Agent-Signature`
+  - request must be signed by the Ed25519 private key matching the JWT-bound public key
 
 ## Participant Checkout (public)
 - `GET /checkout/{slug}`

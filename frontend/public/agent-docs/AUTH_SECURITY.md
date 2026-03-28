@@ -43,6 +43,16 @@ For external AI agents/coding assistants (non-browser automation), selected prot
 - Valid signed requests run under synthetic identity: `owner_email = "agent:<agent-id>"`
 - This leaves per-agent ownership marks for created/managed events.
 
+## Personal Access Tokens
+
+Payknot also supports host-issued Personal Access Tokens (PATs) for practical agent runtimes.
+
+- PATs are created by the host from authenticated session endpoints.
+- PATs are sent as `Authorization: Bearer <PAT>`.
+- PATs authenticate against host APIs such as `/api/auth/me`, `/api/events`, and `/api/events/import/luma`.
+- PATs can also be exchanged for a short-lived runtime JWT through `POST /api/agent/auth/pat`.
+- Treat PATs as high-sensitivity credentials; they should only live in secret stores and should be rotated/revoked when compromised.
+
 ### Security Guidance
 - Never expose private keys in frontend/browser code.
 - Rotate keypairs periodically and update `AGENT_PUBLIC_KEYS_JSON`.

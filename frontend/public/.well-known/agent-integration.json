@@ -1,36 +1,28 @@
 {
-  "name": "Payknot Event Checkout Service",
+  "product": "Payknot",
   "base_url": "https://pay.crea8r.xyz",
-  "docs_index": "https://pay.crea8r.xyz/agent-docs/INDEX.md",
-  "openapi": "https://pay.crea8r.xyz/openapi.json",
-  "auth": {
-    "primary_mode": "nonce-jwt",
-    "modes": {
-      "nonce_jwt": {
-        "nonce_endpoint": "/api/agent/auth/nonce",
-        "token_endpoint": "/api/agent/auth/token",
-        "bearer_usage": ["/api/agent/checkout/create"]
-      },
-      "request_signature": {
-        "headers": ["X-Agent-Id", "X-Agent-Timestamp", "X-Agent-Signature"],
-        "canonical_string": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
-      }
-    }
+  "docs": {
+    "index": "/agent-docs/INDEX.md",
+    "skill": "/agents/skill.md",
+    "heartbeat": "/agents/heartbeat.md",
+    "openapi": "/openapi.json",
+    "llms": "/llms.txt"
   },
-  "key_registry_endpoints": {
-    "list": "/api/agent-keys",
-    "upsert": "/api/agent-keys",
-    "revoke": "/api/agent-keys/revoke"
-  },
-  "core_endpoints": {
+  "host_api_auth": [
+    "session_cookie",
+    "personal_access_token",
+    "agent_signature"
+  ],
+  "agent_runtime_auth": [
+    "personal_access_token",
+    "agent_nonce_jwt"
+  ],
+  "entrypoints": {
+    "pat_exchange": "/api/agent/auth/pat",
+    "agent_me": "/api/agent/auth/me",
+    "host_me": "/api/auth/me",
     "events": "/api/events",
-    "event_subroutes": "/api/events/{id}",
-    "checkout_invoice": "/api/checkout/invoice",
-    "checkout_confirm": "/api/checkout/confirm",
-    "checkout_status": "/api/checkout/status?reference=...",
-    "checkout_public": "/api/checkout/{slug}",
-    "agent_nonce": "/api/agent/auth/nonce",
-    "agent_token": "/api/agent/auth/token",
+    "luma_import": "/api/events/import/luma",
     "agent_checkout_create": "/api/agent/checkout/create"
   }
 }

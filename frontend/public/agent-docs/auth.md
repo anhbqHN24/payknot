@@ -1,5 +1,23 @@
 # Agent Auth Guide
 
+## Mode 0: Personal Access Token (recommended for practical agent integrations)
+
+1. Host creates a PAT via `POST /api/agent/pats` from a normal logged-in session.
+2. Agent stores the returned token in secret storage.
+3. Use `Authorization: Bearer <PAT>` for host APIs such as:
+   - `GET /api/auth/me`
+   - `GET /api/events`
+   - `POST /api/events`
+   - `POST /api/events/import/luma`
+4. For payment automation, generate an ephemeral Ed25519 keypair locally.
+5. Exchange PAT via `POST /api/agent/auth/pat` with:
+   - `token`
+   - `session_pubkey`
+   - optional `label`
+6. Use returned JWT for runtime auth and sign sensitive requests with:
+   - `X-Agent-Timestamp`
+   - `X-Agent-Signature`
+
 ## Mode A: Nonce -> JWT (primary for runtime automation)
 
 1. `GET /api/agent/auth/nonce?agent_pubkey=<base58_pubkey>`
@@ -12,6 +30,8 @@
    - `POST /api/agent/checkout/create`
 
 Token TTL: 24h (re-auth on 401).
+
+For payment-impacting runtime writes, JWT alone is not enough. The request must also be signed by the Ed25519 private key that matches the JWT-bound public key.
 
 ## Mode B: Request signature auth (supported for signed host APIs)
 
@@ -46,6 +66,7 @@ POST
 
 ## Security notes
 
+- Treat PAT as a root API credential for the host account.
 - Keep private keys server-side only.
 - Never log JWTs or private keys.
 - Rotate keypairs periodically.

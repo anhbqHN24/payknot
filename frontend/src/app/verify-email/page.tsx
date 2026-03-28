@@ -47,8 +47,11 @@ function VerifyEmailContent() {
       >
         {message}
       </p>
-      <a href="/" className="inline-block rounded-lg border px-3 py-1.5 text-sm">
-        Back to Login
+      <a
+        href="/app"
+        className="inline-block rounded-lg border px-3 py-1.5 text-sm"
+      >
+        Back to App
       </a>
     </section>
   );

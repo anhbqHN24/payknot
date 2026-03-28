@@ -31,6 +31,12 @@ type AgentCheckoutCreateRequest struct {
 	Memo       string  `json:"memo"`
 }
 
+type AgentPATTokenRequest struct {
+	Token         string `json:"token"`
+	SessionPubkey string `json:"session_pubkey"`
+	Label         string `json:"label"`
+}
+
 func AgentAuthNonce(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -118,33 +124,60 @@ func AgentAuthToken(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = database.DB.Exec(`UPDATE agent_nonces SET used_at = NOW() WHERE agent_pubkey=$1 AND nonce=$2`, req.AgentPubkey, req.Nonce)
 
-	jti := uuid.NewString()
-	sessionExp := time.Now().Add(24 * time.Hour)
-	claims := middleware.AgentClaims{
-		AgentPubkey: req.AgentPubkey,
-		JTI:         jti,
-		IssuedAt:    time.Now().Unix(),
-		ExpiresAt:   sessionExp.Unix(),
-		Scope:       "agent:settlement",
-	}
-	token, err := middleware.SignAgentJWT(claims)
-	if err != nil {
-		http.Error(w, "failed to issue token", http.StatusInternalServerError)
+	writeAgentAuthResponse(w, req.AgentPubkey, "agent:settlement")
+}
+
+func AgentAuthPAT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, err = database.DB.Exec(`
-		INSERT INTO agent_sessions(id, agent_pubkey, jwt_jti, expires_at)
-		VALUES ($1::uuid,$2,$3,$4)
-	`, uuid.NewString(), req.AgentPubkey, jti, sessionExp)
-	if err != nil {
-		http.Error(w, "failed to persist session", http.StatusInternalServerError)
+
+	var req AgentPATTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.Token = strings.TrimSpace(req.Token)
+	req.SessionPubkey = strings.TrimSpace(req.SessionPubkey)
+	req.Label = strings.TrimSpace(req.Label)
+
+	pat, ok := middleware.PersonalAccessTokenAuthFromToken(req.Token)
+	if !ok {
+		http.Error(w, "invalid PAT", http.StatusUnauthorized)
+		return
+	}
+
+	if req.SessionPubkey != "" {
+		pubBytes, err := base58.Decode(req.SessionPubkey)
+		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+			http.Error(w, "invalid session_pubkey", http.StatusBadRequest)
+			return
+		}
+		writeAgentAuthResponse(w, req.SessionPubkey, "agent:settlement")
+		return
+	}
+
+	writeAgentAuthResponse(w, "pat:"+pat.TokenID, "agent:runtime")
+}
+
+func AgentAuthMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	agent, ok := middleware.CurrentAgent(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"access_token": token,
-		"token_type":   "Bearer",
-		"expires_in":   86400,
+		"agent_id":    agent.AgentPubkey,
+		"scope":       agent.Scope,
+		"issued_at":   time.Unix(agent.IssuedAt, 0).UTC().Format(time.RFC3339),
+		"expires_at":  time.Unix(agent.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		"auth_method": authMethodForAgent(agent.AgentPubkey),
 	})
 }
 
@@ -275,4 +308,48 @@ func explorerFor(sig string) string {
 		return ""
 	}
 	return fmt.Sprintf("https://explorer.solana.com/tx/%s", sig)
+}
+
+func writeAgentAuthResponse(w http.ResponseWriter, agentID, scope string) {
+	jti := uuid.NewString()
+	sessionExp := time.Now().Add(24 * time.Hour)
+	claims := middleware.AgentClaims{
+		AgentPubkey: agentID,
+		JTI:         jti,
+		IssuedAt:    time.Now().Unix(),
+		ExpiresAt:   sessionExp.Unix(),
+		Scope:       scope,
+	}
+	token, err := middleware.SignAgentJWT(claims)
+	if err != nil {
+		http.Error(w, "failed to issue token", http.StatusInternalServerError)
+		return
+	}
+	_, err = database.DB.Exec(`
+		INSERT INTO agent_sessions(id, agent_pubkey, jwt_jti, expires_at)
+		VALUES ($1::uuid,$2,$3,$4)
+	`, uuid.NewString(), agentID, jti, sessionExp)
+	if err != nil {
+		http.Error(w, "failed to persist session", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token":             token,
+		"token_type":               "Bearer",
+		"expires_in":               86400,
+		"agent_id":                 agentID,
+		"scope":                    scope,
+		"requires_signed_requests": strings.HasPrefix(scope, "agent:settlement"),
+	})
+}
+
+func authMethodForAgent(agentID string) string {
+	if strings.HasPrefix(agentID, "pat:") {
+		return "pat"
+	}
+	if _, err := base58.Decode(agentID); err == nil {
+		return "ed25519_session"
+	}
+	return "unknown"
 }

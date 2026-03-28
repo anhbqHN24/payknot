@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -528,8 +530,52 @@ func sendVerificationEmail(email, token string) error {
 	}
 	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", strings.TrimRight(appURL, "/"), url.QueryEscape(token))
 	subject := "Verify your Payknot account"
-	body := fmt.Sprintf("Please verify your email by opening this link:\n\n%s\n\nThis link expires in 30 minutes.", verifyLink)
-	return sendEmailWithMode(email, subject, body, "email-verify")
+	textBody := fmt.Sprintf(
+		"Verify your Payknot account.\n\nOpen this link to verify your email:\n%s\n\nThis link expires in 30 minutes. If you did not create a Payknot account, you can ignore this email.",
+		verifyLink,
+	)
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+  <body style="margin:0;padding:0;background-color:#f3f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%%" style="background-color:#f3f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%%" style="max-width:560px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:20px;overflow:hidden;">
+            <tr>
+              <td style="padding:32px 32px 12px 32px;">
+                <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;font-weight:700;">Payknot</div>
+                <h1 style="margin:12px 0 0 0;font-size:28px;line-height:1.2;color:#0f172a;">Verify your email</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 32px 0 32px;font-size:15px;line-height:1.7;color:#334155;">
+                <p style="margin:0 0 16px 0;">Thanks for creating your Payknot account. Confirm your email address to continue into the app and manage event payment sessions.</p>
+                <p style="margin:0 0 24px 0;">This verification link expires in <strong>30 minutes</strong>.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 8px 32px;">
+                <a href="%s" style="display:inline-block;background-color:#0f172a;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 22px;border-radius:12px;">Verify Email</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px 0 32px;font-size:13px;line-height:1.7;color:#64748b;">
+                <p style="margin:0 0 8px 0;">If the button does not work, copy and paste this link into your browser:</p>
+                <p style="margin:0;word-break:break-all;"><a href="%s" style="color:#2563eb;text-decoration:underline;">%s</a></p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px 32px 32px;font-size:12px;line-height:1.7;color:#94a3b8;">
+                <p style="margin:0;">If you did not create a Payknot account, you can safely ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`, verifyLink, verifyLink, verifyLink)
+	return sendEmailWithModeHTML(email, subject, textBody, htmlBody, "email-verify")
 }
 
 func sendPasswordResetEmail(email, token string) error {
@@ -544,13 +590,24 @@ func sendPasswordResetEmail(email, token string) error {
 }
 
 func sendEmailWithMode(email, subject, body, logTag string) error {
+	return sendEmailWithModeHTML(email, subject, body, "", logTag)
+}
+
+func sendEmailWithModeHTML(email, subject, textBody, htmlBody, logTag string) error {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_MODE")))
 	if mode == "" {
-		mode = "log"
+		if strings.TrimSpace(os.Getenv("RESEND_API_KEY")) != "" {
+			mode = "resend"
+		} else {
+			mode = "log"
+		}
 	}
 	if mode == "log" {
-		fmt.Printf("[%s] %s -> %s\n", logTag, email, body)
+		fmt.Printf("[%s] %s -> %s\n", logTag, email, textBody)
 		return nil
+	}
+	if mode == "resend" {
+		return sendViaResend(email, subject, textBody, htmlBody, logTag)
 	}
 
 	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
@@ -565,14 +622,87 @@ func sendEmailWithMode(email, subject, body, logTag string) error {
 		return fmt.Errorf("smtp is not configured")
 	}
 
-	msg := []byte("From: " + from + "\r\n" +
-		"To: " + email + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" +
-		body + "\r\n")
+	var msg []byte
+	if strings.TrimSpace(htmlBody) == "" {
+		msg = []byte("From: " + from + "\r\n" +
+			"To: " + email + "\r\n" +
+			"Subject: " + subject + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" +
+			textBody + "\r\n")
+	} else {
+		boundary := "payknot-alt-" + uuid.NewString()
+		msg = []byte("From: " + from + "\r\n" +
+			"To: " + email + "\r\n" +
+			"Subject: " + subject + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n" +
+			"--" + boundary + "\r\n" +
+			"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" +
+			textBody + "\r\n\r\n" +
+			"--" + boundary + "\r\n" +
+			"Content-Type: text/html; charset=\"utf-8\"\r\n\r\n" +
+			htmlBody + "\r\n\r\n" +
+			"--" + boundary + "--\r\n")
+	}
 	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
 	return smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{email}, msg)
+}
+
+func sendViaResend(email, subject, textBody, htmlBody, logTag string) error {
+	apiKey := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
+	if apiKey == "" {
+		return fmt.Errorf("resend is not configured")
+	}
+
+	fromEmail := strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL"))
+	if fromEmail == "" {
+		fromEmail = "payknot@notify.crea8r.xyz"
+	}
+	fromName := strings.TrimSpace(os.Getenv("RESEND_FROM_NAME"))
+	if fromName == "" {
+		fromName = "Payknot"
+	}
+	from := fmt.Sprintf("%s <%s>", fromName, fromEmail)
+
+	payload := map[string]interface{}{
+		"from":    from,
+		"to":      []string{email},
+		"subject": subject,
+		"text":    textBody,
+		"headers": map[string]string{
+			"X-Payknot-Message-Type": logTag,
+		},
+	}
+	if strings.TrimSpace(htmlBody) != "" {
+		payload["html"] = htmlBody
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Payknot/1.0")
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("resend send failed: %s", strings.TrimSpace(string(respBody)))
+	}
+	return nil
 }
 
 func verifyGoogleIDToken(idToken string) (string, string, error) {

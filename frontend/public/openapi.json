@@ -24,6 +24,11 @@
         "in": "cookie",
         "name": "spw_session",
         "description": "Host dashboard session cookie auth."
+      },
+      "PersonalAccessToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Host-issued personal access token for agent/API usage."
       }
     },
     "parameters": {
@@ -196,6 +201,51 @@
               }
             }
           }
+        }
+      },
+      "AgentPATCreateRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "Human-readable token label.", "example": "Codex production runtime" },
+          "expiresInDays": { "type": "integer", "description": "Optional PAT lifetime in days. 0 means no explicit expiry.", "example": 90 }
+        }
+      },
+      "AgentPATRevokeRequest": {
+        "type": "object",
+        "required": ["tokenId"],
+        "properties": {
+          "tokenId": { "type": "string", "format": "uuid", "description": "PAT identifier to revoke." }
+        }
+      },
+      "AgentPATListResponse": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "name": { "type": "string" },
+                "tokenHint": { "type": "string" },
+                "scope": { "type": "string" },
+                "createdAt": { "type": "string", "format": "date-time" },
+                "lastUsedAt": { "type": "string", "format": "date-time" },
+                "expiresAt": { "type": "string", "format": "date-time" },
+                "revokedAt": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "AgentPATAuthRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": { "type": "string", "description": "Host-issued PAT value.", "example": "pkt_pat_0123456789abcdef" },
+          "session_pubkey": { "type": "string", "description": "Optional ephemeral Ed25519 session public key in base58. Required for signed payment automation." },
+          "label": { "type": "string", "description": "Optional runtime label.", "example": "codex-prod-01" }
         }
       },
       "CreateCheckoutInvoiceRequest": {
@@ -474,6 +524,94 @@
             }
           },
           "400": { "description": "Missing agentId." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/agent/pats": {
+      "get": {
+        "operationId": "listAgentPATs",
+        "summary": "List host personal access tokens",
+        "description": "Returns host-created PAT metadata. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "PAT list.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentPATListResponse" } } }
+          },
+          "401": { "description": "Unauthorized." }
+        }
+      },
+      "post": {
+        "operationId": "createAgentPAT",
+        "summary": "Create host personal access token",
+        "description": "Creates a new PAT for agent/API usage and returns the token value exactly once. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AgentPATCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PAT created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "example": true },
+                    "tokenId": { "type": "string", "format": "uuid" },
+                    "name": { "type": "string" },
+                    "token": { "type": "string" },
+                    "scope": { "type": "string" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "createdAt": { "type": "string", "format": "date-time" },
+                    "tokenHint": { "type": "string" },
+                    "ownerEmail": { "type": "string", "format": "email" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation failed." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/agent/pats/revoke": {
+      "post": {
+        "operationId": "revokeAgentPAT",
+        "summary": "Revoke host personal access token",
+        "description": "Revokes an existing PAT. Host session auth required.",
+        "security": [{ "SessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AgentPATRevokeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PAT revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "example": true },
+                    "tokenId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing token id." },
           "401": { "description": "Unauthorized." }
         }
       }
@@ -815,11 +953,75 @@
         }
       }
     },
+    "/agent/auth/pat": {
+      "post": {
+        "operationId": "exchangePATForAgentToken",
+        "summary": "Exchange PAT for runtime JWT",
+        "description": "Validates a host-issued personal access token and returns a short-lived bearer JWT for agent runtime flows. Provide session_pubkey to bind the JWT to an ephemeral Ed25519 key for signed payment automation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AgentPATAuthRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bearer token issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "token_type": { "type": "string", "example": "Bearer" },
+                    "expires_in": { "type": "integer", "example": 86400 },
+                    "agent_id": { "type": "string" },
+                    "scope": { "type": "string" },
+                    "requires_signed_requests": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "PAT invalid or expired." }
+        }
+      }
+    },
+    "/agent/auth/me": {
+      "get": {
+        "operationId": "getAgentRuntimeIdentity",
+        "summary": "Inspect current agent runtime identity",
+        "description": "Returns the current runtime identity for PAT or agent JWT auth.",
+        "security": [{ "PersonalAccessToken": [] }],
+        "responses": {
+          "200": {
+            "description": "Current runtime identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agent_id": { "type": "string" },
+                    "scope": { "type": "string" },
+                    "issued_at": { "type": "string", "format": "date-time" },
+                    "expires_at": { "type": "string", "format": "date-time" },
+                    "auth_method": { "type": "string", "example": "pat" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
     "/agent/checkout/create": {
       "post": {
         "operationId": "createAutomatedCheckout",
         "summary": "Create automated checkout settlement",
-        "description": "Policy-gated automated settlement endpoint. Requires Authorization: Bearer <agent_jwt> and returns tx signature on success.",
+        "description": "Policy-gated automated settlement endpoint. Requires bearer JWT plus X-Agent-Timestamp and X-Agent-Signature headers from the JWT-bound Ed25519 session key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -852,7 +1054,7 @@
               }
             }
           },
-          "401": { "description": "Missing/invalid JWT." },
+          "401": { "description": "Missing/invalid JWT or request signature." },
           "403": { "description": "Policy rejected." },
           "500": { "description": "Settlement backend unavailable." }
         }

@@ -1,46 +1,17 @@
 {
-  "name": "Payknot Event Checkout Agent",
-  "description": "Hosted event checkout/payment service for Solana USDC deposits with event management, participant checkout, and payment verification APIs.",
-  "service_url": "https://pay.crea8r.xyz",
+  "name": "Payknot",
+  "description": "Event checkout and Solana USDC deposit platform with host dashboard APIs and agent automation support.",
+  "documentation_url": "https://pay.crea8r.xyz/agent-docs/INDEX.md",
+  "openapi_url": "https://pay.crea8r.xyz/openapi.json",
+  "llms_url": "https://pay.crea8r.xyz/llms.txt",
+  "skill_url": "https://pay.crea8r.xyz/agents/skill.md",
+  "heartbeat_url": "https://pay.crea8r.xyz/agents/heartbeat.md",
   "auth": {
-    "type": "multi-mode",
-    "modes": [
-      {
-        "name": "ed25519-request-signature",
-        "headers": ["X-Agent-Id", "X-Agent-Timestamp", "X-Agent-Signature"],
-        "canonical": "METHOD + '\n' + PATH + '\n' + TIMESTAMP + '\n' + SHA256_HEX(BODY_RAW)"
-      },
-      {
-        "name": "nonce-jwt",
-        "nonce_endpoint": "/api/agent/auth/nonce",
-        "token_endpoint": "/api/agent/auth/token",
-        "bearer_usage": ["/api/agent/checkout/create"]
-      }
+    "methods": [
+      "session_cookie",
+      "personal_access_token",
+      "agent_signature",
+      "agent_nonce_jwt"
     ]
-  },
-  "content_types": [
-    "application/json",
-    "text/markdown"
-  ],
-  "skills": [
-    "create-and-manage-events",
-    "create-checkout-invoice",
-    "confirm-payment",
-    "check-payment-status",
-    "manage-agent-keys",
-    "nonce-jwt-agent-auth",
-    "automated-checkout-settlement"
-  ],
-  "docs": {
-    "openapi": "https://pay.crea8r.xyz/openapi.json",
-    "llms": "https://pay.crea8r.xyz/llms.txt",
-    "index": "https://pay.crea8r.xyz/agent-docs/INDEX.md",
-    "auth": "https://pay.crea8r.xyz/agent-docs/auth.md",
-    "examples": "https://pay.crea8r.xyz/agent-docs/examples.md"
-  },
-  "example_tasks": [
-    "Create a new event with wallet+QR payment methods",
-    "Create checkout invoice for participant and poll status until paid",
-    "Rotate an agent public key and revoke a compromised agent id"
-  ]
+  }
 }

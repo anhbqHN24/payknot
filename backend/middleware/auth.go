@@ -26,6 +26,8 @@ type contextKey string
 
 const authClaimsKey contextKey = "auth_claims"
 
+const personalAccessTokenPrefix = "pkt_pat_"
+
 type AuthClaims struct {
 	UserID    int64  `json:"sub"`
 	Email     string `json:"email"`
@@ -170,6 +172,12 @@ func GetClaimsFromRequest(r *http.Request) (AuthClaims, error) {
 	return ParseAndVerifyJWT(strings.TrimSpace(cookie.Value))
 }
 
+type PersonalAccessTokenAuth struct {
+	TokenID string
+	Claims  AuthClaims
+	Scope   string
+}
+
 func SessionExpiryFromNow() time.Time {
 	return time.Now().Add(sessionTTL())
 }
@@ -273,18 +281,7 @@ func agentPublicKeys() map[string]ed25519.PublicKey {
 
 func verifyAgentSignature(r *http.Request) (AuthClaims, bool) {
 	agentID := strings.TrimSpace(r.Header.Get("X-Agent-Id"))
-	tsRaw := strings.TrimSpace(r.Header.Get("X-Agent-Timestamp"))
-	sigRaw := strings.TrimSpace(r.Header.Get("X-Agent-Signature"))
-	if agentID == "" || tsRaw == "" || sigRaw == "" {
-		return AuthClaims{}, false
-	}
-
-	ts, err := strconv.ParseInt(tsRaw, 10, 64)
-	if err != nil {
-		return AuthClaims{}, false
-	}
-	now := time.Now().Unix()
-	if ts < now-300 || ts > now+60 {
+	if agentID == "" {
 		return AuthClaims{}, false
 	}
 
@@ -294,9 +291,40 @@ func verifyAgentSignature(r *http.Request) (AuthClaims, bool) {
 		return AuthClaims{}, false
 	}
 
+	if !VerifyEd25519RequestSignature(r, pub) {
+		return AuthClaims{}, false
+	}
+
+	now := time.Now().Unix()
+
+	return AuthClaims{
+		UserID:    -1,
+		Email:     "agent:" + agentID,
+		SessionID: "agent:" + agentID,
+		IssuedAt:  now,
+		ExpiresAt: now + 3600,
+	}, true
+}
+
+func VerifyEd25519RequestSignature(r *http.Request, pub ed25519.PublicKey) bool {
+	tsRaw := strings.TrimSpace(r.Header.Get("X-Agent-Timestamp"))
+	sigRaw := strings.TrimSpace(r.Header.Get("X-Agent-Signature"))
+	if tsRaw == "" || sigRaw == "" {
+		return false
+	}
+
+	ts, err := strconv.ParseInt(tsRaw, 10, 64)
+	if err != nil {
+		return false
+	}
+	now := time.Now().Unix()
+	if ts < now-300 || ts > now+60 {
+		return false
+	}
+
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		return AuthClaims{}, false
+		return false
 	}
 	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	bodyHash := sha256.Sum256(bodyBytes)
@@ -310,47 +338,117 @@ func verifyAgentSignature(r *http.Request) (AuthClaims, bool) {
 
 	sig, err := base64.StdEncoding.DecodeString(sigRaw)
 	if err != nil || len(sig) != ed25519.SignatureSize {
-		return AuthClaims{}, false
+		return false
 	}
-	if !ed25519.Verify(pub, []byte(canonical), sig) {
+	return ed25519.Verify(pub, []byte(canonical), sig)
+}
+
+func bearerToken(r *http.Request) string {
+	authz := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(authz[7:])
+}
+
+func sessionClaimsFromRequest(r *http.Request) (AuthClaims, bool) {
+	claims, err := GetClaimsFromRequest(r)
+	if err != nil {
 		return AuthClaims{}, false
 	}
 
-	return AuthClaims{
-		UserID:    -1,
-		Email:     "agent:" + agentID,
-		SessionID: "agent:" + agentID,
-		IssuedAt:  now,
-		ExpiresAt: now + 3600,
-	}, true
+	var exists bool
+	err = database.DB.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM user_sessions
+			WHERE id = $1
+			  AND user_id = $2
+			  AND revoked_at IS NULL
+			  AND expires_at > NOW()
+		)
+	`, claims.SessionID, claims.UserID).Scan(&exists)
+	if err != nil || !exists {
+		return AuthClaims{}, false
+	}
+	return claims, true
+}
+
+func personalAccessTokenAuthFromRaw(raw string) (PersonalAccessTokenAuth, bool) {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(raw, personalAccessTokenPrefix) {
+		return PersonalAccessTokenAuth{}, false
+	}
+	sum := sha256.Sum256([]byte(raw))
+	tokenHash := hex.EncodeToString(sum[:])
+
+	var out PersonalAccessTokenAuth
+	err := database.DB.QueryRow(`
+		SELECT
+			apt.id::text,
+			u.id,
+			u.email,
+			COALESCE(apt.scope, 'agent:runtime')
+		FROM agent_personal_access_tokens apt
+		JOIN users u ON u.id = apt.user_id
+		WHERE apt.token_hash = $1
+		  AND apt.revoked_at IS NULL
+		  AND (apt.expires_at IS NULL OR apt.expires_at > NOW())
+		LIMIT 1
+	`, tokenHash).Scan(&out.TokenID, &out.Claims.UserID, &out.Claims.Email, &out.Scope)
+	if err != nil {
+		return PersonalAccessTokenAuth{}, false
+	}
+
+	now := time.Now().Unix()
+	out.Claims.SessionID = "pat:" + out.TokenID
+	out.Claims.IssuedAt = now
+	out.Claims.ExpiresAt = now + 3600
+	_, _ = database.DB.Exec(`
+		UPDATE agent_personal_access_tokens
+		SET last_used_at = NOW()
+		WHERE id = $1::uuid
+	`, out.TokenID)
+	return out, true
+}
+
+func PersonalAccessTokenAuthFromToken(raw string) (PersonalAccessTokenAuth, bool) {
+	return personalAccessTokenAuthFromRaw(raw)
+}
+
+func personalAccessTokenAuthFromRequest(r *http.Request) (PersonalAccessTokenAuth, bool) {
+	return personalAccessTokenAuthFromRaw(bearerToken(r))
+}
+
+func PersonalAccessTokenAuthFromBearer(r *http.Request) (PersonalAccessTokenAuth, bool) {
+	return personalAccessTokenAuthFromRequest(r)
+}
+
+func RequireSessionAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := sessionClaimsFromRequest(r)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), authClaimsKey, claims)
+		next(w, r.WithContext(ctx))
+	}
 }
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, err := GetClaimsFromRequest(r)
-		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if claims, ok := sessionClaimsFromRequest(r); ok {
+			ctx := context.WithValue(r.Context(), authClaimsKey, claims)
+			next(w, r.WithContext(ctx))
 			return
 		}
-
-		var exists bool
-		err = database.DB.QueryRow(`
-			SELECT EXISTS (
-				SELECT 1
-				FROM user_sessions
-				WHERE id = $1
-				  AND user_id = $2
-				  AND revoked_at IS NULL
-				  AND expires_at > NOW()
-			)
-		`, claims.SessionID, claims.UserID).Scan(&exists)
-		if err != nil || !exists {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if pat, ok := personalAccessTokenAuthFromRequest(r); ok {
+			ctx := context.WithValue(r.Context(), authClaimsKey, pat.Claims)
+			next(w, r.WithContext(ctx))
 			return
 		}
-
-		ctx := context.WithValue(r.Context(), authClaimsKey, claims)
-		next(w, r.WithContext(ctx))
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	}
 }
 
