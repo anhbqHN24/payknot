@@ -3,19 +3,25 @@ const agentModes = [
     title: "Browser Session",
     subtitle: "For humans",
     body: "Use the normal dashboard when a person is creating events and reviewing deposits manually.",
-    tone: "border-slate-200 bg-slate-50",
+    tone:
+      "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/80",
+    subtitleTone: "text-slate-500 dark:text-slate-300",
   },
   {
     title: "PAT Bootstrap",
     subtitle: "Recommended entry point",
     body: "Create a Personal Access Token in the dashboard. Agents can use it for host APIs and to bootstrap a hardened runtime session.",
-    tone: "border-indigo-200 bg-indigo-50",
+    tone:
+      "border-indigo-200 bg-indigo-50 dark:border-indigo-700/70 dark:bg-indigo-950/70",
+    subtitleTone: "text-indigo-700 dark:text-indigo-200",
   },
   {
     title: "Signed Payment Session",
     subtitle: "For payment automation",
     body: "Generate an ephemeral Ed25519 keypair, exchange the PAT for a short-lived JWT bound to that public key, then sign sensitive requests.",
-    tone: "border-emerald-200 bg-emerald-50",
+    tone:
+      "border-emerald-200 bg-emerald-50 dark:border-emerald-700/70 dark:bg-emerald-950/70",
+    subtitleTone: "text-emerald-700 dark:text-emerald-200",
   },
 ];
 
@@ -95,30 +101,34 @@ export default function AgentsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-cyan-50 p-5">
-              <p className="text-sm font-semibold">Recommended policy</p>
+            <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-cyan-50 p-5 dark:border-slate-700 dark:from-slate-900 dark:to-cyan-950/60">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                Recommended policy
+              </p>
               <div className="mt-4 space-y-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-sm font-medium">Normal host work</p>
+                <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/90">
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-50">
+                    Normal host work
+                  </p>
                   <p className="mt-1 text-xs app-muted">
                     Stay in the default event dashboard. No agent controls are
                     shown unless the host opts into Agent Security Mode.
                   </p>
                 </div>
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                  <p className="text-sm font-medium text-indigo-700">
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-700/70 dark:bg-indigo-950/75">
+                  <p className="text-sm font-medium text-indigo-700 dark:text-indigo-100">
                     Agent bootstrap
                   </p>
-                  <p className="mt-1 text-xs text-indigo-900/80">
+                  <p className="mt-1 text-xs text-indigo-900/80 dark:text-indigo-100/90">
                     PAT is the onboarding credential because it is easy to issue
                     and easy to store safely in a secret manager.
                   </p>
                 </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="text-sm font-medium text-emerald-700">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-700/70 dark:bg-emerald-950/75">
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-100">
                     Payment automation
                   </p>
-                  <p className="mt-1 text-xs text-emerald-900/80">
+                  <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/90">
                     JWT + Ed25519 signed request is required for the hardened
                     path.
                   </p>
@@ -134,7 +144,9 @@ export default function AgentsPage() {
               key={mode.title}
               className={`rounded-2xl border p-5 shadow-sm ${mode.tone}`}
             >
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <p
+                className={`text-xs font-semibold uppercase tracking-wide ${mode.subtitleTone}`}
+              >
                 {mode.subtitle}
               </p>
               <h2 className="mt-2 text-lg font-semibold">{mode.title}</h2>
@@ -170,13 +182,13 @@ export default function AgentsPage() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-[1fr_0.95fr]">
-          <article className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm">
+          <article className="min-w-0 rounded-3xl border app-surface p-6 md:p-8 shadow-sm">
             <h2 className="text-2xl font-semibold">Canonical signed request</h2>
             <p className="mt-3 text-sm app-muted">
               For high-risk agent actions, Payknot expects the request to be
               signed using the JWT-bound Ed25519 private key.
             </p>
-            <pre className="mt-4 overflow-auto rounded-2xl border bg-slate-950 px-4 py-4 text-xs leading-6 text-cyan-100">
+            <pre className="mt-4 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-2xl border bg-slate-950 px-4 py-4 text-xs leading-6 text-cyan-100">
 {`POST
 /api/agent/checkout/create
 <UNIX_TIMESTAMP>
@@ -185,25 +197,25 @@ export default function AgentsPage() {
             <p className="mt-4 text-sm app-muted">
               Headers:
             </p>
-            <pre className="mt-2 overflow-auto rounded-2xl border bg-slate-950 px-4 py-4 text-xs leading-6 text-cyan-100">
+            <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-2xl border bg-slate-950 px-4 py-4 text-xs leading-6 text-cyan-100">
 {`Authorization: Bearer <agent_jwt>
 X-Agent-Timestamp: <unix_seconds>
 X-Agent-Signature: <base64_ed25519_signature>`}
             </pre>
           </article>
 
-          <article className="rounded-3xl border app-surface p-6 md:p-8 shadow-sm">
+          <article className="min-w-0 rounded-3xl border app-surface p-6 md:p-8 shadow-sm">
             <h2 className="text-2xl font-semibold">Documentation links</h2>
             <div className="mt-5 space-y-3">
               {docsLinks.map((item) => (
                 <a
                   key={item.href}
                   href={item.href}
-                  className="block rounded-2xl border border-slate-200 bg-slate-50 p-4 hover:border-indigo-300 transition"
+                  className="block min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4 hover:border-indigo-300 transition dark:border-slate-700 dark:bg-slate-900/80"
                 >
                   <p className="text-sm font-semibold">{item.label}</p>
                   <p className="mt-1 text-xs app-muted">{item.note}</p>
-                  <p className="mt-2 text-xs font-mono text-slate-500">
+                  <p className="mt-2 break-all text-xs font-mono text-slate-500 dark:text-slate-300">
                     {item.href}
                   </p>
                 </a>
@@ -212,11 +224,11 @@ X-Agent-Signature: <base64_ed25519_signature>`}
           </article>
         </section>
 
-        <section className="rounded-3xl border border-indigo-300/70 bg-gradient-to-r from-indigo-50 to-cyan-50 p-6 md:p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold">
+        <section className="rounded-3xl border border-indigo-300/70 bg-gradient-to-r from-indigo-50 to-cyan-50 p-6 md:p-8 shadow-sm dark:border-indigo-700/60 dark:from-indigo-950/80 dark:to-cyan-950/70">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">
             Use agents deliberately, not implicitly.
           </h2>
-          <p className="mt-2 max-w-3xl text-sm md:text-base app-muted">
+          <p className="mt-2 max-w-3xl text-sm md:text-base text-slate-700 dark:text-slate-200">
             Payknot now keeps the default dashboard clean for normal hosts and
             moves professional agent controls behind an explicit Agent Security
             Mode toggle. That separation is intentional because payment
